@@ -30,6 +30,15 @@ DISTAL_LABELS="${PHASE1_ANAT_STEP3_DIR}/distal6_labels.tsv"
 SN_MNI="${PHASE1_ANAT_STEP3_DIR}/sn2_mni.nii.gz"
 SN_LABELS="${PHASE1_ANAT_STEP3_DIR}/sn2_labels.tsv"
 REG_PREFIX="${PHASE1_ANAT_STEP3_DIR}/mni2009b_to_native_"
+REG_AFFINE="${REG_PREFIX}0GenericAffine.mat"
+REG_WARP="${REG_PREFIX}1Warp.nii.gz"
+REG_INV_WARP="${REG_PREFIX}1InverseWarp.nii.gz"
+REG_ALT_WARP="${REG_PREFIX}0Warp.nii.gz"
+REG_ALT_INV_WARP="${REG_PREFIX}0InverseWarp.nii.gz"
+STEP3_FORWARD_AFFINE=""
+STEP3_FORWARD_WARP=""
+STEP3_INVERSE_WARP=""
+STEP3_TRANSFORM_LAYOUT=""
 
 STEP3_USE_T2="0"
 STEP3_REGISTRATION_MODE="single_t1_raw"
@@ -58,6 +67,34 @@ fi
 STEP3_USE_AFFINE="${PHASE1_REG_AFFINE_ENABLE:-1}"
 STEP3_AFFINE_REASON="config"
 
+resolve_step3_transform_outputs() {
+  STEP3_FORWARD_AFFINE=""
+  STEP3_FORWARD_WARP=""
+  STEP3_INVERSE_WARP=""
+  STEP3_TRANSFORM_LAYOUT=""
+
+  if [[ -f "${REG_AFFINE}" && -f "${REG_WARP}" ]]; then
+    STEP3_FORWARD_AFFINE="${REG_AFFINE}"
+    STEP3_FORWARD_WARP="${REG_WARP}"
+    [[ -f "${REG_INV_WARP}" ]] && STEP3_INVERSE_WARP="${REG_INV_WARP}"
+    STEP3_TRANSFORM_LAYOUT="affine_plus_warp"
+    return 0
+  fi
+
+  if [[ ! -f "${REG_AFFINE}" && -f "${REG_WARP}" && -f "${REG_ALT_WARP}" ]]; then
+    STEP3_FORWARD_WARP="${REG_WARP}"
+    if [[ -f "${REG_INV_WARP}" ]]; then
+      STEP3_INVERSE_WARP="${REG_INV_WARP}"
+    elif [[ -f "${REG_ALT_INV_WARP}" ]]; then
+      STEP3_INVERSE_WARP="${REG_ALT_INV_WARP}"
+    fi
+    STEP3_TRANSFORM_LAYOUT="composite_warp_only"
+    return 0
+  fi
+
+  return 1
+}
+
 step3_outputs_ready() {
   local manifest_registration_mode=""
   local manifest_use_t2=""
@@ -66,7 +103,15 @@ step3_outputs_ready() {
   local manifest_use_mask=""
   local manifest_mask_path=""
   local manifest_use_affine=""
-  [[ -f "${STEP3_MANIFEST}" && -f "${MNI_BRAIN}" && -f "${DISTAL_MNI}" && -f "${DISTAL_LABELS}" && -f "${SN_MNI}" && -f "${SN_LABELS}" && -f "${REG_PREFIX}1Warp.nii.gz" && -f "${REG_PREFIX}1InverseWarp.nii.gz" && -f "${REG_PREFIX}0GenericAffine.mat" ]] || return 1
+  local manifest_transform_layout=""
+  local manifest_forward_affine=""
+  local manifest_forward_warp=""
+  local manifest_inverse_warp=""
+  [[ -f "${STEP3_MANIFEST}" && -f "${MNI_BRAIN}" && -f "${DISTAL_MNI}" && -f "${DISTAL_LABELS}" && -f "${SN_MNI}" && -f "${SN_LABELS}" ]] || return 1
+  resolve_step3_transform_outputs || return 1
+  [[ -n "${STEP3_FORWARD_WARP}" && -f "${STEP3_FORWARD_WARP}" ]] || return 1
+  [[ -z "${STEP3_FORWARD_AFFINE}" || -f "${STEP3_FORWARD_AFFINE}" ]] || return 1
+  [[ -z "${STEP3_INVERSE_WARP}" || -f "${STEP3_INVERSE_WARP}" ]] || return 1
   manifest_registration_mode="$(read_manifest_value "${STEP3_MANIFEST}" "registration_mode")"
   manifest_use_t2="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_t2")"
   manifest_mni_t2="$(read_manifest_value "${STEP3_MANIFEST}" "mni_t2")"
@@ -74,9 +119,17 @@ step3_outputs_ready() {
   manifest_use_mask="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_mask")"
   manifest_mask_path="$(read_manifest_value "${STEP3_MANIFEST}" "mni_subcortical_mask")"
   manifest_use_affine="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_affine")"
+  manifest_transform_layout="$(read_manifest_value "${STEP3_MANIFEST}" "transform_layout")"
+  manifest_forward_affine="$(read_manifest_value "${STEP3_MANIFEST}" "forward_affine")"
+  manifest_forward_warp="$(read_manifest_value "${STEP3_MANIFEST}" "forward_warp")"
+  manifest_inverse_warp="$(read_manifest_value "${STEP3_MANIFEST}" "inverse_warp")"
   [[ "${manifest_registration_mode}" == "${STEP3_REGISTRATION_MODE}" ]] || return 1
   [[ "${manifest_use_t2:-0}" == "${STEP3_USE_T2}" ]] || return 1
   [[ "${manifest_use_affine:-1}" == "${STEP3_USE_AFFINE}" ]] || return 1
+  [[ "${manifest_transform_layout}" == "${STEP3_TRANSFORM_LAYOUT}" ]] || return 1
+  [[ "${manifest_forward_affine}" == "${STEP3_FORWARD_AFFINE}" ]] || return 1
+  [[ "${manifest_forward_warp}" == "${STEP3_FORWARD_WARP}" ]] || return 1
+  [[ "${manifest_inverse_warp}" == "${STEP3_INVERSE_WARP}" ]] || return 1
   if [[ "${STEP3_USE_T2}" == "1" ]]; then
     [[ -f "${MNI_T2_BRAIN}" ]] || return 1
     [[ "${manifest_mni_t2}" == "${MNI_T2}" ]] || return 1
@@ -100,9 +153,11 @@ reset_step3_outputs() {
     "${DISTAL_LABELS}" \
     "${SN_MNI}" \
     "${SN_LABELS}" \
-    "${REG_PREFIX}0GenericAffine.mat" \
-    "${REG_PREFIX}1Warp.nii.gz" \
-    "${REG_PREFIX}1InverseWarp.nii.gz" \
+    "${REG_AFFINE}" \
+    "${REG_WARP}" \
+    "${REG_INV_WARP}" \
+    "${REG_ALT_WARP}" \
+    "${REG_ALT_INV_WARP}" \
     "${PHASE1_ANAT_STEP3_DIR}/ants_syn.log"
 }
 
@@ -184,7 +239,7 @@ if [[ ! -f "${SN_MNI}" || ! -f "${SN_LABELS}" ]]; then
 fi
 
 # 用锁死参数的 SyN 把 MNI2009b 配准到个体原生 T1，优先守住深部核团区域。
-if [[ ! -f "${REG_PREFIX}1Warp.nii.gz" || ! -f "${REG_PREFIX}0GenericAffine.mat" ]]; then
+if ! resolve_step3_transform_outputs; then
   MASK_ARGS=()
   AFFINE_STAGE_ARGS=()
   if [[ "${STEP3_USE_MASK}" == "1" ]]; then
@@ -255,6 +310,11 @@ if [[ ! -f "${REG_PREFIX}1Warp.nii.gz" || ! -f "${REG_PREFIX}0GenericAffine.mat"
   fi
 fi
 
+resolve_step3_transform_outputs || die "Step3 registration finished but expected transforms are missing under ${REG_PREFIX}"
+if [[ -z "${STEP3_FORWARD_AFFINE}" ]]; then
+  log "[phase1_anat] Step3 detected composite warp-only output for ${SUBJECT_ID}; downstream steps will reuse the composite warp without a separate affine"
+fi
+
 # 写出当前 step 的输出清单。
 cat > "${STEP3_MANIFEST}" <<EOF
 key	value
@@ -281,9 +341,10 @@ distal_mni	${DISTAL_MNI}
 distal_labels	${DISTAL_LABELS}
 sn_mni	${SN_MNI}
 sn_labels	${SN_LABELS}
-forward_affine	${REG_PREFIX}0GenericAffine.mat
-forward_warp	${REG_PREFIX}1Warp.nii.gz
-inverse_warp	${REG_PREFIX}1InverseWarp.nii.gz
+transform_layout	${STEP3_TRANSFORM_LAYOUT}
+forward_affine	${STEP3_FORWARD_AFFINE}
+forward_warp	${STEP3_FORWARD_WARP}
+inverse_warp	${STEP3_INVERSE_WARP}
 EOF
 
 # 把当前 step 的关键模板结果链接到 stepview，便于快速核对。

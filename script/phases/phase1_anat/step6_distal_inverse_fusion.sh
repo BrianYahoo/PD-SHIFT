@@ -37,8 +37,22 @@ VIS_T2_ATLAS_DIR="${PHASE1_ANAT_VIS_DIR}/t2/atlas"
 VIS_T2_SUBCORTEX_DIR="${PHASE1_ANAT_VIS_DIR}/t2/subcortex"
 ROI_MASTER_TSV="${PIPELINE_ROOT}/framework/details/roi.tsv"
 STEP6_USE_T2_VIS="0"
+STEP6_TRANSFORM_LAYOUT="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "transform_layout")"
+STEP6_FORWARD_AFFINE="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "forward_affine")"
+STEP6_FORWARD_WARP="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "forward_warp")"
+STEP6_ANTS_TRANSFORMS=()
 if [[ -f "${T2_BRAIN}" ]]; then
   STEP6_USE_T2_VIS="1"
+fi
+
+[[ -n "${STEP6_FORWARD_WARP}" ]] || STEP6_FORWARD_WARP="${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_1Warp.nii.gz"
+[[ -n "${STEP6_FORWARD_AFFINE}" ]] || STEP6_FORWARD_AFFINE="${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_0GenericAffine.mat"
+[[ -f "${STEP6_FORWARD_WARP}" ]] || die "Missing step5 forward warp for Step6: ${STEP6_FORWARD_WARP}"
+STEP6_ANTS_TRANSFORMS=(-t "${STEP6_FORWARD_WARP}")
+if [[ -f "${STEP6_FORWARD_AFFINE}" ]]; then
+  STEP6_ANTS_TRANSFORMS+=(-t "${STEP6_FORWARD_AFFINE}")
+elif [[ "${STEP6_TRANSFORM_LAYOUT}" == "composite_warp_only" ]]; then
+  log "[phase1_anat] Step6 applying composite warp-only transforms for ${SUBJECT_ID}"
 fi
 
 atlas_native_ready() {
@@ -77,8 +91,7 @@ if [[ ! -f "${DISTAL_NATIVE}" ]]; then
     -r "${T1_NATIVE}" \
     -o "${DISTAL_NATIVE}" \
     -n NearestNeighbor \
-    -t "${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_1Warp.nii.gz" \
-    -t "${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_0GenericAffine.mat" >"${PHASE1_ANAT_STEP6_DIR}/ants_apply_distal.log" 2>&1
+    "${STEP6_ANTS_TRANSFORMS[@]}" >"${PHASE1_ANAT_STEP6_DIR}/ants_apply_distal.log" 2>&1
 fi
 
 # 把黑质 atlas 同样逆向变换到当前个体的真实原生 T1 空间。
@@ -89,8 +102,7 @@ if [[ ! -f "${SN_NATIVE}" ]]; then
     -r "${T1_NATIVE}" \
     -o "${SN_NATIVE}" \
     -n NearestNeighbor \
-    -t "${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_1Warp.nii.gz" \
-    -t "${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_0GenericAffine.mat" >"${PHASE1_ANAT_STEP6_DIR}/ants_apply_sn.log" 2>&1
+    "${STEP6_ANTS_TRANSFORMS[@]}" >"${PHASE1_ANAT_STEP6_DIR}/ants_apply_sn.log" 2>&1
 fi
 
 # 先把常规皮层下结构、DISTAL 与黑质合成为固定 20 ROI 皮层下图谱。

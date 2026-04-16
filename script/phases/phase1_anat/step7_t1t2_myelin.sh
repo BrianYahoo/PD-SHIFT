@@ -61,6 +61,14 @@ myelin_plot	${MYELIN_PLOT}
 EOF
 }
 
+reset_step7_surface_outputs() {
+  rm -f "${STEP7_MANIFEST}"
+  rm -f "${LOG_DIR}"/*
+  rm -f "${NATIVE_SURF_DIR}"/*
+  rm -f "${FSLR_DIR}"/*
+  rm -f "${T1_PLOT}" "${T2_PLOT}" "${MYELIN_PLOT}"
+}
+
 run_surface_plot() {
   case "${PHASE1_SURFACE_PLOT_ENV:-osmesa}" in
     osmesa)
@@ -88,6 +96,24 @@ run_surface_plot() {
   fi
 }
 
+normalize_mris_convert_shape_output() {
+  local expected_path="$1"
+  local hemi_fs="$2"
+  local normalized_basename=""
+  local prefixed_path=""
+
+  [[ -f "${expected_path}" ]] && return 0
+
+  normalized_basename="$(basename "${expected_path}")"
+  prefixed_path="$(dirname "${expected_path}")/${hemi_fs}h.${normalized_basename}"
+  if [[ -f "${prefixed_path}" ]]; then
+    mv -f "${prefixed_path}" "${expected_path}"
+    return 0
+  fi
+
+  die "Missing mris_convert shape output: ${expected_path}"
+}
+
 if [[ "${PHASE1_TISSUE_PROFILE_ENABLE:-0}" != "1" ]]; then
   write_step7_manifest "disabled"
   log "[phase1_anat] Step7 disabled by config for ${SUBJECT_ID}"
@@ -104,6 +130,10 @@ if [[ -f "${STEP7_MANIFEST}" && -f "${REGIONAL_CSV}" && -f "${MYELIN_VOLUME}" ]]
   && { [[ "${PHASE1_TISSUE_PROFILE_CIFTI_ENABLE:-0}" != "1" ]] || { [[ -f "${T1_DSCALAR}" && -f "${T2_DSCALAR}" && -f "${MYELIN_DSCALAR}" && -f "${T1_PLOT}" && -f "${T2_PLOT}" && -f "${MYELIN_PLOT}" ]]; }; }; then
   log "[phase1_anat] Step7 already done for ${SUBJECT_ID}"
   exit 0
+fi
+
+if [[ "${PHASE1_TISSUE_PROFILE_CIFTI_ENABLE:-0}" == "1" ]]; then
+  reset_step7_surface_outputs
 fi
 
 [[ -f "${T1_NATIVE}" ]] || die "Missing T1 for Step7: ${T1_NATIVE}"
@@ -148,7 +178,9 @@ copy_surface_native() {
   mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sphere" "${sphere_native}" >"${LOG_DIR}/${hemi}_mris_convert_sphere.log" 2>&1
   mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sphere.reg" "${sphere_reg_native}" >"${LOG_DIR}/${hemi}_mris_convert_sphere_reg.log" 2>&1
   mris_convert -c "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.thickness" "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${thickness_native}" >"${LOG_DIR}/${hemi}_mris_convert_thickness.log" 2>&1
+  normalize_mris_convert_shape_output "${thickness_native}" "${hemi_fs}"
   mris_convert -c "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sulc" "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${sulc_native}" >"${LOG_DIR}/${hemi}_mris_convert_sulc.log" 2>&1
+  normalize_mris_convert_shape_output "${sulc_native}" "${hemi_fs}"
 
   "${WB_COMMAND}" -surface-average "${midthickness_native}" -surf "${white_native}" -surf "${pial_native}" >"${LOG_DIR}/${hemi}_surface_average.log" 2>&1
   "${WB_COMMAND}" -set-structure "${white_native}" "${structure}" -surface-type ANATOMICAL -surface-secondary-type GRAY_WHITE >>"${LOG_DIR}/${hemi}_surface_average.log" 2>&1
@@ -172,8 +204,8 @@ copy_surface_native() {
   "${WB_COMMAND}" -surface-resample "${midthickness_native}" "${regsphere_native}" "${target_sphere}" BARYCENTRIC "${midthickness_fslr}" >"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
   "${WB_COMMAND}" -set-structure "${midthickness_fslr}" "${structure}" -surface-type ANATOMICAL -surface-secondary-type MIDTHICKNESS >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
   "${WB_COMMAND}" -surface-generate-inflated "${midthickness_fslr}" "${inflated_fslr}" "${very_inflated_fslr}" >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
-  "${WB_COMMAND}" -set-structure "${inflated_fslr}" "${structure}" -surface-type ANATOMICAL -surface-secondary-type INFLATED >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
-  "${WB_COMMAND}" -set-structure "${very_inflated_fslr}" "${structure}" -surface-type ANATOMICAL -surface-secondary-type VERY_INFLATED >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
+  "${WB_COMMAND}" -set-structure "${inflated_fslr}" "${structure}" -surface-type INFLATED >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
+  "${WB_COMMAND}" -set-structure "${very_inflated_fslr}" "${structure}" -surface-type VERY_INFLATED >>"${LOG_DIR}/${hemi}_resample_surface.log" 2>&1
 
   "${WB_COMMAND}" -metric-resample "${sulc_native}" "${regsphere_native}" "${target_sphere}" ADAP_BARY_AREA "${sulc_fslr}" \
     -area-surfs "${midthickness_native}" "${midthickness_fslr}" \
