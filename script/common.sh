@@ -600,7 +600,7 @@ EOF
 }
 EOF
       ;;
-    t1)
+    t1|t2)
       cat > "$out_json" <<'EOF'
 {}
 EOF
