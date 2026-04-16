@@ -28,6 +28,7 @@ ATLAS_LABELS="${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv"
 VIS_REG_DIR="${PHASE3_DWI_VIS_DIR}/registration"
 VIS_REG_DONE="${VIS_REG_DIR}/split_overlay.done"
 T2_IN_DWI="${DWI_DIR}/t2_in_dwi.nii.gz"
+FIVETT_SCRATCH_DIR="${DWI_DIR}/scratch_5ttgen"
 
 dwi_visualizations_ready() {
   [[ -f "${VIS_REG_DONE}" ]] || return 1
@@ -73,9 +74,14 @@ if [[ ! -f "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt" ]]; then
   ' "${FREESURFER_HOME}/FreeSurferColorLUT.txt" > "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt"
 fi
 
+# 在调用 5ttgen 前，必须确认 DWI 空间分割已经真实存在，避免 MRtrix 在工作目录落根级临时目录后才失败。
+[[ -f "${DWI_DIR}/aparc+aseg_dwi.nii.gz" ]] || die "Missing DWI-space aparc+aseg before 5ttgen: ${DWI_DIR}/aparc+aseg_dwi.nii.gz"
+
 # 如果 5TT 组织分型图还不存在，则基于 DWI 空间的 FreeSurfer 分割生成 5TT。
 if [[ ! -f "${DWI_DIR}/5tt_dwi.mif" ]]; then
-  5ttgen freesurfer "${DWI_DIR}/aparc+aseg_dwi.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -lut "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt" -nocrop -nthreads "$NTHREADS"
+  mkdir -p "${FIVETT_SCRATCH_DIR}"
+  5ttgen freesurfer "${DWI_DIR}/aparc+aseg_dwi.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -lut "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt" -nocrop -nthreads "$NTHREADS" -scratch "${FIVETT_SCRATCH_DIR}"
+  rm -rf "${FIVETT_SCRATCH_DIR}"
 fi
 
 # 如果开启 hybrid atlas 修补，则把 STN/GPi 位置从 WM 改到 subcortical GM，避免 ACT 在深部靶点处截断。
