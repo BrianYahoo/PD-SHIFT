@@ -1,0 +1,38 @@
+# Runtime logs and batch outputs
+/logs/
+/issues/log/
+*.log
+*.out
+*.err
+*.pid
+
+# Local Codex/thread handoff state, not pipeline source
+/memory.md
+/issues/prompt/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter/editor noise
+.ipynb_checkpoints/
+.DS_Store
+*~
+
+# Neuroimaging and generated data products should not live in this code repo
+*.nii
+*.nii.gz
+*.mgz
+*.mgh
+*.trk
+*.tck
+*.fib
+*.mat
+*.h5
+*.hdf5
+
+# Local environment folders
+.venv/
+venv/
+env/

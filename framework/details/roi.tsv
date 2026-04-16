@@ -1,0 +1,89 @@
+index	label (TVP)	label	abbreviation	english_full_name	chinese_full_name
+1	L.BSTS	L.BSTS	L-BSTS	Left Banks of Superior Temporal Sulcus	左侧颞上沟沟岸
+2	L.CACG	L.CACG	L-CACG	Left Caudal Anterior Cingulate Gyrus	左侧尾侧前扣带回
+3	L.CMFG	L.CMFG	L-CMFG	Left Caudal Middle Frontal Gyrus	左侧尾侧额中回
+4	L.CU	L.CU	L-CU	Left Cuneus	左侧楔叶
+5	L.EC	L.EC	L-EC	Left Entorhinal Cortex	左侧内嗅皮层
+6	L.FG	L.FG	L-FG	Left Fusiform Gyrus	左侧梭状回
+7	L.IPG	L.IPG	L-IPG	Left Inferior Parietal Gyrus	左侧顶下小叶
+8	L.ITG	L.ITG	L-ITG	Left Inferior Temporal Gyrus	左侧颞下回
+9	L.ICG	L.ICG	L-ICG	Left Isthmus Cingulate Gyrus	左侧扣带峡部
+10	L.LOG	L.LOG	L-LOG	Left Lateral Occipital Gyrus	左侧枕外侧回
+11	L.LOFG	L.LOFG	L-LOFG	Left Lateral Orbitofrontal Gyrus	左侧额眶外侧回
+12	L.LG	L.LG	L-LG	Left Lingual Gyrus	左侧舌回
+13	L.MOFG	L.MOFG	L-MOFG	Left Medial Orbitofrontal Gyrus	左侧额眶内侧回
+14	L.MTG	L.MTG	L-MTG	Left Middle Temporal Gyrus	左侧颞中回
+15	L.PHIG	L.PHIG	L-PHIG	Left Parahippocampal Gyrus	左侧海马旁回
+16	L.PaCG	L.PaCG	L-PaCG	Left Paracentral Lobule	左侧旁中央小叶
+17	L.POP	L.POP	L-POP	Left Pars Opercularis	左侧额下回岛盖部
+18	L.POR	L.POR	L-POR	Left Pars Orbitalis	左侧额下回眶部
+19	L.PTR	L.PTR	L-PTR	Left Pars Triangularis	左侧额下回三角部
+20	L.PCAL	L.PCAL	L-PCAL	Left Pericalcarine Cortex	左侧距状旁皮层
+21	L.PoCG	L.PoCG	L-PoCG	Left Postcentral Gyrus	左侧中央后回
+22	L.PCG	L.PCG	L-PCG	Left Posterior Cingulate Gyrus	左侧后扣带回
+23	L.PrCG	L.PrCG	L-PrCG	Left Precentral Gyrus	左侧中央前回
+24	L.PCU	L.PCU	L-PCU	Left Precuneus	左侧楔前叶
+25	L.RACG	L.RACG	L-RACG	Left Rostral Anterior Cingulate Gyrus	左侧吻侧前扣带回
+26	L.RMFG	L.RMFG	L-RMFG	Left Rostral Middle Frontal Gyrus	左侧吻侧额中回
+27	L.SFG	L.SFG	L-SFG	Left Superior Frontal Gyrus	左侧额上回
+28	L.SPG	L.SPG	L-SPG	Left Superior Parietal Gyrus	左侧顶上小叶
+29	L.STG	L.STG	L-STG	Left Superior Temporal Gyrus	左侧颞上回
+30	L.SMG	L.SMG	L-SMG	Left Supramarginal Gyrus	左侧缘上回
+31	L.FP	L.FP	L-FP	Left Frontal Pole	左侧额极
+32	L.TP	L.TP	L-TP	Left Temporal Pole	左侧颞极
+33	L.TTG	L.TTG	L-TTG	Left Transverse Temporal Gyrus	左侧横颞回
+34	L.IN	L.IN	L-IN	Left Insula	左侧岛叶
+35	L.CER	L.CER	L-CER	Left Cerebellum	左侧小脑
+36	L.TH	L.TH	L-TH	Left Thalamus	左侧丘脑
+37	L.CA	L.CA	L-CA	Left Caudate	左侧尾状核
+38	L.PU	L.PU	L-PU	Left Putamen	左侧壳核
+39	L.HI	L.HI	L-HI	Left Hippocampus	左侧海马体
+40	L.AC	L.AC	L-AC	Left Accumbens	左侧伏隔核
+41	lh-GPe	L.GPe	L-GPe	Left Globus Pallidus external	左侧外侧苍白球
+42	lh-GPi	L.GPi	L-GPi	Left Globus Pallidus internal	左侧内侧苍白球
+43	lh-STN	L.STN	L-STN	Left Subthalamic Nucleus	左侧丘脑底核
+44	rh-GPe	R.GPe	R-GPe	Right Globus Pallidus external	右侧外侧苍白球
+45	rh-GPi	R.GPi	R-GPi	Right Globus Pallidus internal	右侧内侧苍白球
+46	rh-STN	R.STN	R-STN	Right Subthalamic Nucleus	右侧丘脑底核
+47	R.TH	R.TH	R-TH	Right Thalamus	右侧丘脑
+48	R.CA	R.CA	R-CA	Right Caudate	右侧尾状核
+49	R.PU	R.PU	R-PU	Right Putamen	右侧壳核
+50	R.HI	R.HI	R-HI	Right Hippocampus	右侧海马体
+51	R.AC	R.AC	R-AC	Right Accumbens	右侧伏隔核
+52	R.BSTS	R.BSTS	R-BSTS	Right Banks of Superior Temporal Sulcus	右侧颞上沟沟岸
+53	R.CACG	R.CACG	R-CACG	Right Caudal Anterior Cingulate Gyrus	右侧尾侧前扣带回
+54	R.CMFG	R.CMFG	R-CMFG	Right Caudal Middle Frontal Gyrus	右侧尾侧额中回
+55	R.CU	R.CU	R-CU	Right Cuneus	右侧楔叶
+56	R.EC	R.EC	R-EC	Right Entorhinal Cortex	右侧内嗅皮层
+57	R.FG	R.FG	R-FG	Right Fusiform Gyrus	右侧梭状回
+58	R.IPG	R.IPG	R-IPG	Right Inferior Parietal Gyrus	右侧顶下小叶
+59	R.ITG	R.ITG	R-ITG	Right Inferior Temporal Gyrus	右侧颞下回
+60	R.ICG	R.ICG	R-ICG	Right Isthmus Cingulate Gyrus	右侧扣带峡部
+61	R.LOG	R.LOG	R-LOG	Right Lateral Occipital Gyrus	右侧枕外侧回
+62	R.LOFG	R.LOFG	R-LOFG	Right Lateral Orbitofrontal Gyrus	右侧额眶外侧回
+63	R.LG	R.LG	R-LG	Right Lingual Gyrus	右侧舌回
+64	R.MOFG	R.MOFG	R-MOFG	Right Medial Orbitofrontal Gyrus	右侧额眶内侧回
+65	R.MTG	R.MTG	R-MTG	Right Middle Temporal Gyrus	右侧颞中回
+66	R.PHIG	R.PHIG	R-PHIG	Right Parahippocampal Gyrus	右侧海马旁回
+67	R.PaCG	R.PaCG	R-PaCG	Right Paracentral Lobule	右侧旁中央小叶
+68	R.POP	R.POP	R-POP	Right Pars Opercularis	右侧额下回岛盖部
+69	R.POR	R.POR	R-POR	Right Pars Orbitalis	右侧额下回眶部
+70	R.PTR	R.PTR	R-PTR	Right Pars Triangularis	右侧额下回三角部
+71	R.PCAL	R.PCAL	R-PCAL	Right Pericalcarine Cortex	右侧距状旁皮层
+72	R.PoCG	R.PoCG	R-PoCG	Right Postcentral Gyrus	右侧中央后回
+73	R.PCG	R.PCG	R-PCG	Right Posterior Cingulate Gyrus	右侧后扣带回
+74	R.PrCG	R.PrCG	R-PrCG	Right Precentral Gyrus	右侧中央前回
+75	R.PCU	R.PCU	R-PCU	Right Precuneus	右侧楔前叶
+76	R.RACG	R.RACG	R-RACG	Right Rostral Anterior Cingulate Gyrus	右侧吻侧前扣带回
+77	R.RMFG	R.RMFG	R-RMFG	Right Rostral Middle Frontal Gyrus	右侧吻侧额中回
+78	R.SFG	R.SFG	R-SFG	Right Superior Frontal Gyrus	右侧额上回
+79	R.SPG	R.SPG	R-SPG	Right Superior Parietal Gyrus	右侧顶上小叶
+80	R.STG	R.STG	R-STG	Right Superior Temporal Gyrus	右侧颞上回
+81	R.SMG	R.SMG	R-SMG	Right Supramarginal Gyrus	右侧缘上回
+82	R.FP	R.FP	R-FP	Right Frontal Pole	右侧额极
+83	R.TP	R.TP	R-TP	Right Temporal Pole	右侧颞极
+84	R.TTG	R.TTG	R-TTG	Right Transverse Temporal Gyrus	右侧横颞回
+85	R.IN	R.IN	R-IN	Right Insula	右侧岛叶
+86	R.CER	R.CER	R-CER	Right Cerebellum	右侧小脑
+87	SubstantiaNigraLH	L.SNc	L-SNc	Left Substantia Nigra pars compacta	左侧黑质致密部
+88	SubstantiaNigraRH	R.SNc	R-SNc	Right Substantia Nigra pars compacta	右侧黑质致密部
