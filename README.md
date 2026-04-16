@@ -28,21 +28,24 @@ PD-SHIFT is engineered with a modular, highly fault-tolerant architecture design
 
 ### Phase 1: Anatomical Reconstruction (`phase1_anat`)
 * **Function:** Individualized cortical surface reconstruction and highly precise deep-brain atlas fusion.
-* **Process:** * Multi-contrast brain extraction (SynthStrip/BET) and N4 bias field correction.
+* **Process:**
+  * Multi-contrast brain extraction (SynthStrip/BET) and N4 bias field correction.
   * High-resolution cortical reconstruction via FreeSurfer/FastSurfer with T2-pial refinement.
   * Dual-channel (T1+T2) ANTs SyN nonlinear registration anchored by native/MNI subcortical masks.
   * Generates the individualized **Hybrid Atlas** (Cortical + DISTAL + SN).
 
 ### Phase 2: Resting State fMRI Preprocessing (`phase2_fmri`)
 * **Function:** Rigorous functional time-series extraction and cleanup.
-* **Process:** * Slice-timing, susceptibility distortion correction (TOPUP), and rigid motion correction (MCFLIRT).
+* **Process:**
+  * Slice-timing, susceptibility distortion correction (TOPUP), and rigid motion correction (MCFLIRT).
   * Boundary-Based Registration (BBR) to native anatomical space.
   * Covariate regression (GS/WM/CSF/HM), band-pass filtering, and FD-based scrubbing.
   * Outputs cleaned regional BOLD signals and Functional Connectivity (FC) matrices based on the Hybrid Atlas.
 
 ### Phase 3: dMRI Preprocessing & Tractography (`phase3_dwi`)
 * **Function:** High-order fiber tracking and structural connectome generation.
-* **Process:** * `MRtrix3` pre-processing: Denoising, Gibbs ringing removal, Eddy/Topup, and Bias correction.
+* **Process:**
+  * `MRtrix3` pre-processing: Denoising, Gibbs ringing removal, Eddy/Topup, and Bias correction.
   * Multi-Shell Multi-Tissue Constrained Spherical Deconvolution (MSMT-CSD) and tissue response normalization.
   * Anatomically-Constrained Tractography (ACT) with `iFOD2`, augmented by subcortical GM topological fixes to prevent premature streamline truncation at the STN/GPi.
   * `SIFT2` filtering and connectome assembly across multiple radial search parameters.
@@ -76,15 +79,17 @@ PD-SHIFT utilizes Python as the connective tissue for matrix operations and BIDS
 ```bash
 conda create -n pdshift python=3.9
 conda activate pdshift
-pip install numpy nibabel scipy matplotlib
+pip install numpy nibabel scipy matplotlib pandas seaborn nilearn surfplot brainspace pyvista
 ```
+
+For headless surface rendering, the current pipeline also supports a separate OSMesa-based renderer environment.
 
 ### 4. Atlas & Templates
 
 The pipeline leverages assets from [Lead-DBS](https://www.lead-dbs.org/). Ensure you have the following assets accessible in your tools directory:
 
-  * `MNI_ICBM_2009b_NLIN_ASYM` templates (T1w, T2w, and Subcortical Masks).
-  * High-resolution subcortical atlases (e.g., DISTAL, SN) mapped to the MNI 2009b space.
+  * `MNI152NLin2009bAsym` templates (T1w, T2w, and subcortical mask).
+  * High-resolution subcortical atlases (e.g., DISTAL, SN) mapped to the same MNI 2009b space.
 
 ### 5. Configuration
 
@@ -92,10 +97,10 @@ Before running, you must specify your local paths and hardware configurations.
 
 1.  Clone the repository:
     ```bash
-    git clone [https://github.com/yourusername/PD-SHIFT.git](https://github.com/yourusername/PD-SHIFT.git)
+    git clone https://github.com/BrianYahoo/PD-SHIFT.git
     cd PD-SHIFT
     ```
-2.  Configure your environment variables and tool paths in `pipeline.env` or the provided configuration templates.
+2.  Configure your environment variables and tool paths in `config/pipeline.env` and the dataset-specific files under `config/datasets/`.
 3.  Ensure the FreeSurfer license is correctly exported:
     ```bash
     export FS_LICENSE=/path/to/your/license.txt
@@ -105,4 +110,4 @@ Before running, you must specify your local paths and hardware configurations.
 
 ## 📖 Detailed Framework Documentation
 
-For a deep dive into the mathematical decisions, bash array configurations, and execution step-views, please refer to the detailed structural breakdown in the [`framework/`] directory.
+For a deep dive into the mathematical decisions, bash array configurations, and execution step-views, please refer to the detailed structural breakdown in the [framework](framework/) directory.
