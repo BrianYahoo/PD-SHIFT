@@ -11,6 +11,7 @@
 
 import argparse
 import json
+import sys
 import warnings
 from pathlib import Path
 
@@ -19,7 +20,11 @@ import numpy as np
 from nilearn import signal
 from nilearn.masking import apply_mask, unmask
 
-from fmri_utils import (
+UTILS_ROOT = Path(__file__).resolve().parents[2]
+if str(UTILS_ROOT) not in sys.path:
+    sys.path.insert(0, str(UTILS_ROOT))
+
+from phase2_fmri.shared.fmri_utils import (
     build_motion_confounds,
     build_signal_confounds,
     load_mask,

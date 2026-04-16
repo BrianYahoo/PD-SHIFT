@@ -18,6 +18,8 @@ require_cmd antsApplyTransforms
 # 定义当前 step 的核心输入输出。
 STEP6_MANIFEST="${PHASE1_ANAT_STEP6_DIR}/manifest.tsv"
 T1_NATIVE="${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz"
+T2_NATIVE="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz"
+T2_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
 APARC_ASEG="${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz"
 DISTAL_MNI="${PHASE1_ANAT_STEP3_DIR}/distal6_mni.nii.gz"
 DISTAL_LABELS="${PHASE1_ANAT_STEP3_DIR}/distal6_labels.tsv"
@@ -29,9 +31,15 @@ SUBC20_NATIVE="${PHASE1_ANAT_STEP6_DIR}/subc20_native.nii.gz"
 SUBC20_LABELS="${PHASE1_ANAT_STEP6_DIR}/subc20_labels.tsv"
 HYBRID_ATLAS="${ATLAS_DIR}/${SUBJECT_ID}_desc-custom_dseg.nii.gz"
 HYBRID_LABELS="${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv"
-VIS_ATLAS_DIR="${PHASE1_ANAT_DIR}/visualization/atlas"
-VIS_SUBCORTEX_DIR="${PHASE1_ANAT_DIR}/visualization/subcortex"
+VIS_T1_ATLAS_DIR="${PHASE1_ANAT_VIS_DIR}/t1/atlas"
+VIS_T1_SUBCORTEX_DIR="${PHASE1_ANAT_VIS_DIR}/t1/subcortex"
+VIS_T2_ATLAS_DIR="${PHASE1_ANAT_VIS_DIR}/t2/atlas"
+VIS_T2_SUBCORTEX_DIR="${PHASE1_ANAT_VIS_DIR}/t2/subcortex"
 ROI_MASTER_TSV="${PIPELINE_ROOT}/framework/details/roi.tsv"
+STEP6_USE_T2_VIS="0"
+if [[ -f "${T2_BRAIN}" ]]; then
+  STEP6_USE_T2_VIS="1"
+fi
 
 atlas_native_ready() {
   [[ -f "${HYBRID_ATLAS}" ]] || return 1
@@ -52,7 +60,11 @@ PY
 log "[phase1_anat] Step6 distal inverse fusion for ${SUBJECT_ID}"
 
 # 如果当前 step 的主要结果都已存在，则直接跳过。
-if [[ -f "${STEP6_MANIFEST}" && -f "${DISTAL_NATIVE}" && -f "${SN_NATIVE}" && -f "${SUBC20_NATIVE}" && -f "${SUBC20_LABELS}" && -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] && atlas_native_ready && compgen -G "${VIS_ATLAS_DIR}/z=*.png" > /dev/null && compgen -G "${VIS_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null; then
+if [[ -f "${STEP6_MANIFEST}" && -f "${DISTAL_NATIVE}" && -f "${SN_NATIVE}" && -f "${SUBC20_NATIVE}" && -f "${SUBC20_LABELS}" && -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] \
+  && atlas_native_ready \
+  && compgen -G "${VIS_T1_ATLAS_DIR}/z=*.png" > /dev/null \
+  && compgen -G "${VIS_T1_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null \
+  && { [[ "${STEP6_USE_T2_VIS}" != "1" ]] || { compgen -G "${VIS_T2_ATLAS_DIR}/z=*.png" > /dev/null && compgen -G "${VIS_T2_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null; }; }; then
   log "[phase1_anat] Step6 already done for ${SUBJECT_ID}"
   exit 0
 fi
@@ -83,7 +95,7 @@ fi
 
 # 先把常规皮层下结构、DISTAL 与黑质合成为固定 20 ROI 皮层下图谱。
 if [[ ! -f "${SUBC20_NATIVE}" || ! -f "${SUBC20_LABELS}" ]] || ! atlas_native_ready; then
-  "${PYTHON_BIN}" "${UTILS_DIR}/build_subcortical_atlas.py" \
+  "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/build_subcortical_atlas.py" \
     --aparc "${APARC_ASEG}" \
     --distal "${DISTAL_NATIVE}" \
     --distal-label-tsv "${DISTAL_LABELS}" \
@@ -95,7 +107,7 @@ fi
 
 # 用固定 20 ROI 皮层下图谱覆盖 FreeSurfer 深部区域，输出最终 88 ROI Hybrid Atlas。
 if [[ ! -f "${HYBRID_ATLAS}" || ! -f "${HYBRID_LABELS}" ]] || ! atlas_native_ready; then
-  "${PYTHON_BIN}" "${UTILS_DIR}/merge_custom_atlas.py" \
+  "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/merge_custom_atlas.py" \
     --aparc "${APARC_ASEG}" \
     --subcortical "${SUBC20_NATIVE}" \
     --subcortical-label-tsv "${SUBC20_LABELS}" \
@@ -105,14 +117,22 @@ if [[ ! -f "${HYBRID_ATLAS}" || ! -f "${HYBRID_LABELS}" ]] || ! atlas_native_rea
 fi
 
 # 输出按 z 轴逐层的 atlas 叠加可视化，便于直接检查融合后的空间位置。
-mkdir -p "${VIS_ATLAS_DIR}"
-mkdir -p "${VIS_SUBCORTEX_DIR}"
-"${PYTHON_BIN}" "${UTILS_DIR}/visualize_hybrid_atlas_overlay.py" \
+mkdir -p "${VIS_T1_ATLAS_DIR}" "${VIS_T1_SUBCORTEX_DIR}"
+"${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/visualize_hybrid_atlas_overlay.py" \
   --t1 "${T1_NATIVE}" \
   --atlas "${HYBRID_ATLAS}" \
   --labels-tsv "${HYBRID_LABELS}" \
-  --atlas-out-dir "${VIS_ATLAS_DIR}" \
-  --subcortex-out-dir "${VIS_SUBCORTEX_DIR}"
+  --atlas-out-dir "${VIS_T1_ATLAS_DIR}" \
+  --subcortex-out-dir "${VIS_T1_SUBCORTEX_DIR}"
+if [[ "${STEP6_USE_T2_VIS}" == "1" ]]; then
+  mkdir -p "${VIS_T2_ATLAS_DIR}" "${VIS_T2_SUBCORTEX_DIR}"
+  "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/visualize_hybrid_atlas_overlay.py" \
+    --t1 "${T2_BRAIN}" \
+    --atlas "${HYBRID_ATLAS}" \
+    --labels-tsv "${HYBRID_LABELS}" \
+    --atlas-out-dir "${VIS_T2_ATLAS_DIR}" \
+    --subcortex-out-dir "${VIS_T2_SUBCORTEX_DIR}"
+fi
 
 # 写出当前 step 的输出清单。
 cat > "${STEP6_MANIFEST}" <<EOF
@@ -125,8 +145,11 @@ subc20_native	${SUBC20_NATIVE}
 subc20_labels	${SUBC20_LABELS}
 hybrid_atlas	${HYBRID_ATLAS}
 hybrid_labels	${HYBRID_LABELS}
-visualization_atlas_dir	${VIS_ATLAS_DIR}
-visualization_subcortex_dir	${VIS_SUBCORTEX_DIR}
+visualization_t1_atlas_dir	${VIS_T1_ATLAS_DIR}
+visualization_t1_subcortex_dir	${VIS_T1_SUBCORTEX_DIR}
+visualization_t2_available	${STEP6_USE_T2_VIS}
+visualization_t2_atlas_dir	$( [[ "${STEP6_USE_T2_VIS}" == "1" ]] && echo "${VIS_T2_ATLAS_DIR}" || echo "" )
+visualization_t2_subcortex_dir	$( [[ "${STEP6_USE_T2_VIS}" == "1" ]] && echo "${VIS_T2_SUBCORTEX_DIR}" || echo "" )
 EOF
 
 # 把当前 step 的关键结果链接到 stepview，便于快速核对。

@@ -3,7 +3,6 @@
 
 import argparse
 import csv
-import json
 from pathlib import Path
 
 import matplotlib
@@ -157,9 +156,7 @@ def main():
     sc_dir.mkdir(parents=True, exist_ok=True)
 
     labels_df = pd.read_csv(final_dir / f"{args.subject_id}_labels.tsv", sep="\t")
-    fc_final = load_matrix(final_dir / f"{args.subject_id}_FC_pearson.csv")
     fc_bbr = load_matrix(final_dir / f"{args.subject_id}_FC_bbr_pearson.csv")
-    sc = load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv")
 
     tvp_labels = labels_df["label (TVP)"].astype(str).tolist()
     source_labels = labels_df["source"].astype(str).str.lower().tolist()
@@ -253,8 +250,10 @@ def main():
     }
 
     sc_inputs = [
-        ("sift2", sc, str(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv")),
+        ("sift2", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv")),
+        ("sift2_invnodevol", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv")),
         ("count", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_count.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_count.csv")),
+        ("count_invnodevol", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv")),
     ]
 
     for sc_type, sc_variant, sc_path in sc_inputs:

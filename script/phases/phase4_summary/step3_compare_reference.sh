@@ -21,7 +21,7 @@ if [[ -f "${COMPARE_DIR}/summary_metrics.csv" && -f "${COMPARE_DIR}/summary_metr
 fi
 
 # 调用比较脚本，把 FC 和 SC 分别与参考结果进行对比。
-"$PYTHON_BIN" "${UTILS_DIR}/compare_reference.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase4_summary/step3/compare_reference.py" \
   --final-dir "${FINAL_DIR}" \
   --subject-id "${SUBJECT_ID}" \
   --dataset-type "${DATASET_TYPE}" \

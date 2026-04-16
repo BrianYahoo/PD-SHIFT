@@ -13,7 +13,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--labels-tsv", required=True)
     parser.add_argument("--count", required=True)
+    parser.add_argument("--count-invnodevol", required=True)
     parser.add_argument("--sift2", required=True)
+    parser.add_argument("--sift2-invnodevol", required=True)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--subject-id", required=True)
     return parser.parse_args()
@@ -73,7 +75,9 @@ def main():
     cortical, subcortical = load_indices(labels_tsv)
     rows = [
         export_one(subject_id, "count", Path(args.count), out_dir, cortical, subcortical),
+        export_one(subject_id, "count_invnodevol", Path(args.count_invnodevol), out_dir, cortical, subcortical),
         export_one(subject_id, "sift2", Path(args.sift2), out_dir, cortical, subcortical),
+        export_one(subject_id, "sift2_invnodevol", Path(args.sift2_invnodevol), out_dir, cortical, subcortical),
     ]
 
     manifest = out_dir / f"{subject_id}_DTI_connectome_typed_manifest.tsv"

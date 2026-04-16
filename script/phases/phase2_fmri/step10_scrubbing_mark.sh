@@ -34,7 +34,7 @@ if [[ -f "$FD_TXT" && -f "$SCRUB_TXT" && -f "$TOXIC_NII" && -f "$SCRUB_QC" ]]; t
 fi
 
 # 计算 FD，并在开启时输出毒瘤帧标记；默认仅保留统计，不实际启用 scrubbing。
-"$PYTHON_BIN" "${UTILS_DIR}/fmri_scrubbing.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step10/fmri_scrubbing.py" \
   --func "$FUNC_INPUT" \
   --motion "${FMRI_DIR}/func_mc.par" \
   --brain-mask "${FMRI_DIR}/gs_mask_func.nii.gz" \

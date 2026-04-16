@@ -25,13 +25,27 @@ PHASE0_STD_ROOT="${PHASE0_INIT_STEP1_DIR}/raw_standardized"
 
 # 记录当前 step 选择了哪些原始输入，最后统一写入 manifest。
 T1_SOURCE_RECORD=""
+T2_SOURCE_RECORD=""
 DWI_SOURCE_RECORD=""
 DWI_REV_SOURCE_RECORD=""
 PRIMARY_FUNC_SOURCE_RECORD=""
 PRIMARY_FUNC_REF_SOURCE_RECORD=""
 T1_ORIGINAL_ZOOMS_RECORD=""
-T1_RESAMPLED_TO_1MM_RECORD="0"
+T1_RESAMPLED_FLAG="0"
 T1_RESAMPLE_TARGET_MM_RECORD="${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}"
+T2_AVAILABLE_RECORD="0"
+
+split_semicolon_list() {
+  local raw_text="${1:-}"
+  local token=""
+  local -a raw_tokens=()
+  IFS=';' read -r -a raw_tokens <<<"${raw_text}"
+  for token in "${raw_tokens[@]}"; do
+    token="${token#"${token%%[![:space:]]*}"}"
+    token="${token%"${token##*[![:space:]]}"}"
+    [[ -n "${token}" ]] && printf '%s\n' "${token}"
+  done
+}
 
 image_zooms_csv() {
   local image_path="$1"
@@ -93,12 +107,26 @@ phase0_step1_outputs_ready() {
 
   find "${BIDS_SUBJECT_DIR}/func" -maxdepth 1 -type f -name "${SUBJECT_ID}_task-rest_run-*_dir-*_bold.nii.gz" | grep -q . || return 1
 
+  local manifest_t2_enable=""
+  local manifest_t2_available=""
+  manifest_t2_enable="$(awk -F '\t' '$1=="t2_enable"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
+  manifest_t2_available="$(awk -F '\t' '$1=="t2_available"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
+  if [[ "${manifest_t2_enable}" != "${INIT_T2_ENABLE:-0}" ]]; then
+    return 1
+  fi
+  if [[ "${manifest_t2_available}" == "1" ]]; then
+    [[ -f "${INIT_STEP0_DIR}/t2.nii.gz" ]] || return 1
+    [[ -f "${INIT_STEP0_DIR}/t2.json" ]] || return 1
+    [[ -f "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz" ]] || return 1
+    [[ -f "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.json" ]] || return 1
+  fi
+
   if [[ "${INIT_T1_RESAMPLE_ENABLE:-0}" == "1" ]]; then
     local target_voxel_size="${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}"
     local manifest_target_voxel_size=""
     local t1_resampled_flag=""
     manifest_target_voxel_size="$(awk -F '\t' '$1=="t1_resample_voxel_size_mm"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
-    t1_resampled_flag="$(awk -F '\t' '$1=="t1_resampled_to_1mm"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
+    t1_resampled_flag="$(awk -F '\t' '$1=="t1_resampled_status"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
     if [[ -n "$manifest_target_voxel_size" && "$manifest_target_voxel_size" != "$target_voxel_size" ]]; then
       return 1
     fi
@@ -144,10 +172,13 @@ reset_phase0_step1_targets() {
     "${INIT_STEP0_DIR}/func.json" \
     "${INIT_STEP0_DIR}/func_ref.nii.gz" \
     "${INIT_STEP0_DIR}/func_ref.json" \
+    "${INIT_STEP0_DIR}/t2.nii.gz" \
+    "${INIT_STEP0_DIR}/t2.json" \
     "${INIT_STEP0_DIR}/dwi_rev.nii.gz" \
     "${INIT_STEP0_DIR}/dwi_rev.bval" \
     "${INIT_STEP0_DIR}/dwi_rev.bvec" \
     "${INIT_STEP0_DIR}/dwi_rev.json"
+  rm -f "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.json"
   rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_bold.nii.gz"
   rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_bold.json"
 }
@@ -234,13 +265,13 @@ stage_t1_nifti() {
   target_slug="$(resample_voxel_slug "$target_voxel_size")"
   staged_target="${PHASE0_STD_ROOT}/t1/t1_resampled_${target_slug}mm.nii.gz"
   T1_ORIGINAL_ZOOMS_RECORD="$(image_zooms_csv "$source_nii")"
-  T1_RESAMPLED_TO_1MM_RECORD="0"
+  T1_RESAMPLED_FLAG="0"
   T1_RESAMPLE_TARGET_MM_RECORD="$target_voxel_size"
   if [[ "${INIT_T1_RESAMPLE_ENABLE:-0}" == "1" ]] && image_requires_target_resample "$source_nii" "$target_voxel_size"; then
     cp -f "$source_nii" "${INIT_STEP0_DIR}/t1_ori.nii.gz"
     mri_convert "${INIT_STEP0_DIR}/t1_ori.nii.gz" "$staged_target" -vs "$target_voxel_size" "$target_voxel_size" "$target_voxel_size" >"${PHASE0_STD_ROOT}/t1/mri_convert_t1_${target_slug}mm.log" 2>&1
     cp -f "$staged_target" "${INIT_STEP0_DIR}/t1.nii.gz"
-    T1_RESAMPLED_TO_1MM_RECORD="1"
+    T1_RESAMPLED_FLAG="1"
   else
     cp -f "$source_nii" "${INIT_STEP0_DIR}/t1.nii.gz"
   fi
@@ -253,6 +284,22 @@ stage_t1_nifti() {
 
   cp -f "${INIT_STEP0_DIR}/t1.nii.gz" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T1w.nii.gz"
   cp -f "${INIT_STEP0_DIR}/t1.json" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T1w.json"
+}
+
+stage_t2_nifti() {
+  local source_nii="$1"
+  local source_json="${2:-}"
+
+  [[ -f "$source_nii" ]] || die "Missing T2 source NIfTI: ${source_nii}"
+  cp -f "$source_nii" "${INIT_STEP0_DIR}/t2.nii.gz"
+  if [[ -n "$source_json" && -f "$source_json" ]]; then
+    cp -f "$source_json" "${INIT_STEP0_DIR}/t2.json"
+  else
+    write_minimal_json "${INIT_STEP0_DIR}/t2.json" "t2" ""
+  fi
+  cp -f "${INIT_STEP0_DIR}/t2.nii.gz" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz"
+  cp -f "${INIT_STEP0_DIR}/t2.json" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.json"
+  T2_AVAILABLE_RECORD="1"
 }
 
 parkinson_series_basename() {
@@ -311,6 +358,28 @@ pick_parkinson_series_dir() {
       return 0
     fi
     shift
+  done
+  return 0
+}
+
+pick_configured_parkinson_t2_dir() {
+  local -a series_patterns=()
+  mapfile -t series_patterns < <(split_semicolon_list "${INIT_T2_SOURCE_PATTERNS:-}")
+  (( ${#series_patterns[@]} > 0 )) || return 0
+  pick_parkinson_series_dir "${series_patterns[@]}"
+}
+
+pick_configured_hcp_t2_dir() {
+  local hcp_root="$1"
+  local -a dir_candidates=()
+  local dir_name=""
+  mapfile -t dir_candidates < <(split_semicolon_list "${INIT_T2_HCP_DIR_CANDIDATES:-}")
+  (( ${#dir_candidates[@]} > 0 )) || return 0
+  for dir_name in "${dir_candidates[@]}"; do
+    if [[ -d "${hcp_root}/${dir_name}" ]]; then
+      echo "${hcp_root}/${dir_name}"
+      return 0
+    fi
   done
   return 0
 }
@@ -448,6 +517,7 @@ import_hcp_phase0_step1() {
   # HCP 原始目录本身已经是 NIfTI，因此这里只做标准化导入和 BIDS 化。
   local hcp_root=""
   local t1_dir=""
+  local t2_dir=""
   local dwi_dir_raw=""
   local dwi_base=""
   local dwi_dir_token=""
@@ -455,6 +525,8 @@ import_hcp_phase0_step1() {
   local dwi_src=""
   local dwi_rev_src=""
   local t1_src=""
+  local t2_src=""
+  local -a t2_file_patterns=()
   local primary_func_src=""
   local primary_func_ref_src=""
   local bids_run=""
@@ -472,6 +544,7 @@ import_hcp_phase0_step1() {
   [[ -d "$hcp_root" ]] || die "Missing HCP 3T input: $hcp_root"
 
   t1_dir="$(pick_first_existing_dir "${hcp_root}/T1w_MPR1" "${hcp_root}/T1w_MPR2")"
+  t2_dir="$(pick_configured_hcp_t2_dir "${hcp_root}")"
   dwi_dir_raw="${hcp_root}/Diffusion"
   mapfile -t REST_DIRS < <(find "$hcp_root" -mindepth 1 -maxdepth 1 -type d -name 'rfMRI_REST*' | sort)
 
@@ -483,6 +556,12 @@ import_hcp_phase0_step1() {
   dwi_src="$(pick_largest_matching_nifti "$dwi_dir_raw" "*DWI_dir*_LR.nii.gz" "*_SBRef*.nii.gz")"
   if [[ -z "$dwi_src" ]]; then
     dwi_src="$(pick_largest_matching_nifti "$dwi_dir_raw" "*DWI_dir*.nii.gz" "*_SBRef*.nii.gz")"
+  fi
+  if [[ "${INIT_T2_ENABLE:-0}" == "1" && -d "${t2_dir}" ]]; then
+    mapfile -t t2_file_patterns < <(split_semicolon_list "${INIT_T2_HCP_FILE_PATTERNS:-*T2w*.nii.gz}")
+    if (( ${#t2_file_patterns[@]} > 0 )); then
+      t2_src="$(pick_largest_matching_nifti "$t2_dir" "${t2_file_patterns[@]}")"
+    fi
   fi
 
   [[ -f "$t1_src" ]] || die "Failed to select HCP T1 NIfTI"
@@ -501,6 +580,10 @@ import_hcp_phase0_step1() {
   fi
 
   stage_t1_nifti "$t1_src" ""
+  if [[ -n "${t2_src}" && -f "${t2_src}" ]]; then
+    stage_t2_nifti "$t2_src" ""
+    T2_SOURCE_RECORD="$t2_src"
+  fi
 
   cp -f "$dwi_src" "${INIT_STEP0_DIR}/dwi.nii.gz"
   cp -f "${dwi_src%.nii.gz}.bval" "${INIT_STEP0_DIR}/dwi.bval"
@@ -579,9 +662,11 @@ import_hcp_phase0_step1() {
 import_parkinson_phase0_step1() {
   # Parkinson 原始目录是 DICOM，必须先用 dcm2niix 做无损标准化转换。
   local t1_dicom_dir=""
+  local t2_dicom_dir=""
   local dwi_dicom_dir=""
   local dwi_rev_dicom_dir=""
   local t1_base=""
+  local t2_base=""
   local dwi_base=""
   local dwi_rev_base=""
   local func_dicom_dir=""
@@ -598,6 +683,7 @@ import_parkinson_phase0_step1() {
   require_cmd dcm2niix
 
   t1_dicom_dir="$(pick_parkinson_series_dir 't1_*' 'T1_*' 'mprage*')"
+  t2_dicom_dir="$(pick_configured_parkinson_t2_dir)"
   dwi_dicom_dir="$(pick_parkinson_series_dir 'dMRI*' 'dwi*')"
   mapfile -t REST_MAIN_DIRS < <(collect_parkinson_rest_main_dirs)
 
@@ -608,6 +694,11 @@ import_parkinson_phase0_step1() {
   run_dcm2niix_series "$t1_dicom_dir" "${PHASE0_STD_ROOT}/t1"
   t1_base="$(pick_converted_base "${PHASE0_STD_ROOT}/t1")"
   stage_t1_nifti "${t1_base}.nii.gz" "${t1_base}.json"
+  if [[ "${INIT_T2_ENABLE:-0}" == "1" && -d "${t2_dicom_dir}" ]]; then
+    run_dcm2niix_series "$t2_dicom_dir" "${PHASE0_STD_ROOT}/t2"
+    t2_base="$(pick_converted_base "${PHASE0_STD_ROOT}/t2")"
+    stage_t2_nifti "${t2_base}.nii.gz" "${t2_base}.json"
+  fi
 
   run_dcm2niix_series "$dwi_dicom_dir" "${PHASE0_STD_ROOT}/dwi"
   dwi_base="$(pick_converted_base "${PHASE0_STD_ROOT}/dwi")"
@@ -669,6 +760,7 @@ import_parkinson_phase0_step1() {
   done
 
   T1_SOURCE_RECORD="$t1_dicom_dir"
+  T2_SOURCE_RECORD="$t2_dicom_dir"
   DWI_SOURCE_RECORD="$dwi_dicom_dir"
   DWI_REV_SOURCE_RECORD="$dwi_rev_dicom_dir"
 }
@@ -706,11 +798,14 @@ dataset_type	${DATASET_TYPE}
 raw_standardization_root	${PHASE0_STD_ROOT}
 t1_source	${T1_SOURCE_RECORD}
 t1_original_zooms_mm	${T1_ORIGINAL_ZOOMS_RECORD}
-t1_resampled	${T1_RESAMPLED_TO_1MM_RECORD}
-t1_resampled_to_1mm	${T1_RESAMPLED_TO_1MM_RECORD}
+t1_resampled	${T1_RESAMPLED_FLAG}
+t1_resampled_status	${T1_RESAMPLED_FLAG}
 t1_resample_enable	${INIT_T1_RESAMPLE_ENABLE:-0}
 t1_resample_config	${INIT_T1_RESAMPLE_ENABLE:-0}
 t1_resample_voxel_size_mm	${T1_RESAMPLE_TARGET_MM_RECORD}
+t2_enable	${INIT_T2_ENABLE:-0}
+t2_available	${T2_AVAILABLE_RECORD}
+t2_source	${T2_SOURCE_RECORD}
 dwi_source	${DWI_SOURCE_RECORD}
 dwi_rev_source	${DWI_REV_SOURCE_RECORD}
 func_source	${PRIMARY_FUNC_SOURCE_RECORD}
@@ -723,6 +818,9 @@ EOF
 link_phase_product_nifti "${PHASE0_INIT_STEPVIEW_DIR}" 1 1 "t1_bids_input" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T1w.nii.gz"
 if [[ -f "${INIT_STEP0_DIR}/t1_ori.nii.gz" ]]; then
   link_phase_product_nifti "${PHASE0_INIT_STEPVIEW_DIR}" 1 5 "t1_ori" "${INIT_STEP0_DIR}/t1_ori.nii.gz"
+fi
+if [[ -f "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz" ]]; then
+  link_phase_product_nifti "${PHASE0_INIT_STEPVIEW_DIR}" 1 6 "t2_bids_input" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz"
 fi
 link_phase_product_nifti "${PHASE0_INIT_STEPVIEW_DIR}" 1 2 "dwi_bids_input" "${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.nii.gz"
 if [[ -f "${PHASE0_INIT_STEP1_DIR}/dwi_rev.nii.gz" ]]; then

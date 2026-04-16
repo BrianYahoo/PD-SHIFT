@@ -32,7 +32,7 @@ if [[ -f "$FUNC_OUTPUT" && -f "$REGRESS_QC" ]]; then
 fi
 
 # 对功能像执行 GS/WM/CSF/HM 协变量回归。
-"$PYTHON_BIN" "${UTILS_DIR}/fmri_regress_covariates.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step8/fmri_regress_covariates.py" \
   --func "$FUNC_INPUT" \
   --motion "${FMRI_DIR}/func_mc.par" \
   --brain-mask "${FMRI_DIR}/gs_mask_func.nii.gz" \

@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_DIR="${PIPELINE_ROOT}/config"
 UTILS_DIR="${PIPELINE_ROOT}/utils"
+if [[ -n "${PYTHONPATH:-}" ]]; then
+  export PYTHONPATH="${UTILS_DIR}:${PYTHONPATH}"
+else
+  export PYTHONPATH="${UTILS_DIR}"
+fi
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -176,11 +181,27 @@ load_dataset_config() {
   : "${INIT_T1_RESAMPLE_ENABLE:=${INIT_T1_RESAMPLE_TO_1MM:-0}}"
   INIT_T1_RESAMPLE_TO_1MM="${INIT_T1_RESAMPLE_ENABLE}"
   : "${INIT_T1_RESAMPLE_VOXEL_SIZE:=1}"
+  : "${INIT_T2_ENABLE:=0}"
+  : "${INIT_T2_SOURCE_PATTERNS:=}"
+  : "${INIT_T2_HCP_DIR_CANDIDATES:=T2w_SPC1;T2w_SPC2}"
+  : "${INIT_T2_HCP_FILE_PATTERNS:=*T2w*.nii.gz}"
   : "${DEFAULT_FUNC_TR:=0.72}"
   : "${FUNC_REQUIRE_JSON_TR:=0}"
   : "${DEFAULT_TOTAL_READOUT_TIME:=0.05}"
   : "${PHASE1_BRAIN_EXTRACT_METHOD:=bet}"
   : "${PHASE1_SURFER_HIRES:=0}"
+  : "${PHASE1_T2_COREG_ENABLE:=${INIT_T2_ENABLE}}"
+  : "${PHASE1_T2_SURFER_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
+  : "${PHASE1_T2_MULTICHANNEL_REG_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
+  : "${PHASE1_SUBCORTICAL_MASK_ENABLE:=0}"
+  : "${PHASE1_TISSUE_PROFILE_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
+  : "${PHASE1_TISSUE_PROFILE_CIFTI_ENABLE:=${PHASE1_TISSUE_PROFILE_ENABLE}}"
+  : "${PHASE1_TISSUE_PROFILE_FSLR_MESH_K:=32}"
+  : "${PHASE1_TISSUE_PROFILE_HIGHRES_MESH_K:=164}"
+  : "${PHASE1_SURFACE_PLOT_ENV:=osmesa}"
+  : "${PHASE1_SURFACE_PLOT_MRI_PYTHON:=}"
+  : "${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:=/data/bryang/project/CNS/tools/surfplot_osmesa_env/bin/python}"
+  : "${PHASE1_REG_AFFINE_ENABLE:=1}"
   : "${PHASE1_FREESURFER_NO_V8:=0}"
   : "${PHASE1_FREESURFER_V8_GUARD:=0}"
   : "${PHASE1_FREESURFER_CORTEX_LABEL_ARGS:=}"
@@ -192,6 +213,8 @@ load_dataset_config() {
   : "${FASTSURFER_CUDA_SELECTION:=round_robin}"
   : "${FASTSURFER_CUDA_MAX_SELECTED_DEVICES:=5}"
   : "${FASTSURFER_CUDA_ENV_SCRIPT:=/data/bryang/project/CNS/tools/use_fastsurfer_cuda_env.sh}"
+  : "${MNI_T2:=}"
+  : "${MNI_SUBCORTICAL_MASK:=}"
   if [[ "${FASTSURFER_USE_CUDA}" == "1" ]]; then
     FASTSURFER_DEVICE="cuda"
     FASTSURFER_VIEWAGG_DEVICE="cuda"
@@ -249,6 +272,7 @@ load_config() {
   DATASET_WORKSPACE_ROOT="${WORKSPACE_ROOT}"
   WORKSPACE_ROOT="${DATASET_WORKSPACE_ROOT}/${SURFER_LABEL}"
   SUBJECT_WORK_ROOT="${WORKSPACE_ROOT}/${SUBJECT_KEY}"
+  SUBJECT_VIS_ROOT="${SUBJECT_WORK_ROOT}/visualization"
   BIDS_SUBJECT_DIR="${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}"
   DERIV_ROOT="${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}"
 
@@ -256,7 +280,8 @@ load_config() {
 
   PHASE0_INIT_DIR="${PHASES_ROOT}/phase0_init"
   PHASE0_INIT_STEP1_DIR="${PHASE0_INIT_DIR}/step1_bids_standardize"
-  PHASE0_INIT_STEPVIEW_DIR="${PHASE0_INIT_DIR}/stepview"
+  PHASE0_INIT_VIS_DIR="${SUBJECT_VIS_ROOT}/phase0_init"
+  PHASE0_INIT_STEPVIEW_DIR="${PHASE0_INIT_VIS_DIR}/stepview"
 
   PHASE1_ANAT_DIR="${PHASES_ROOT}/phase1_anat"
   PHASE1_ANAT_STEP1_DIR="${PHASE1_ANAT_DIR}/step1_brain_extract"
@@ -265,16 +290,20 @@ load_config() {
   PHASE1_ANAT_STEP4_DIR="${PHASE1_ANAT_DIR}/step4_warpdrive_review"
   PHASE1_ANAT_STEP5_DIR="${PHASE1_ANAT_DIR}/step5_save_inverse_warp"
   PHASE1_ANAT_STEP6_DIR="${PHASE1_ANAT_DIR}/step6_distal_inverse_fusion"
-  PHASE1_ANAT_STEPVIEW_DIR="${PHASE1_ANAT_DIR}/stepview"
+  PHASE1_ANAT_STEP7_DIR="${PHASE1_ANAT_DIR}/step7_t1t2_myelin"
+  PHASE1_ANAT_VIS_DIR="${SUBJECT_VIS_ROOT}/phase1_anat"
+  PHASE1_ANAT_STEPVIEW_DIR="${PHASE1_ANAT_VIS_DIR}/stepview"
   ATLAS_DIR="${PHASE1_ANAT_DIR}/atlas"
 
   PHASE2_FMRI_DIR="${PHASES_ROOT}/phase2_fmri"
-  PHASE2_FMRI_STEPVIEW_DIR="${PHASE2_FMRI_DIR}/stepview"
+  PHASE2_FMRI_VIS_DIR="${SUBJECT_VIS_ROOT}/phase2_fmri"
+  PHASE2_FMRI_STEPVIEW_DIR="${PHASE2_FMRI_VIS_DIR}/stepview"
   FMRI_ROOT_DIR="${PHASE2_FMRI_DIR}"
   FMRI_DIR="${FMRI_ROOT_DIR}"
 
   PHASE3_DWI_DIR="${PHASES_ROOT}/phase3_dwi"
-  PHASE3_DWI_STEPVIEW_DIR="${PHASE3_DWI_DIR}/stepview"
+  PHASE3_DWI_VIS_DIR="${SUBJECT_VIS_ROOT}/phase3_dwi"
+  PHASE3_DWI_STEPVIEW_DIR="${PHASE3_DWI_VIS_DIR}/stepview"
   DWI_DIR="${PHASE3_DWI_DIR}"
 
   PHASE4_SUMMARY_DIR="${PHASES_ROOT}/phase4_summary"
@@ -291,8 +320,10 @@ load_config() {
     "${BIDS_SUBJECT_DIR}/anat" \
     "${BIDS_SUBJECT_DIR}/func" \
     "${BIDS_SUBJECT_DIR}/dwi" \
+    "${SUBJECT_VIS_ROOT}" \
     "${PHASES_ROOT}" \
     "${PHASE0_INIT_STEP1_DIR}" \
+    "${PHASE0_INIT_VIS_DIR}" \
     "${PHASE0_INIT_STEPVIEW_DIR}" \
     "${PHASE1_ANAT_STEP1_DIR}" \
     "${PHASE1_ANAT_STEP2_DIR}" \
@@ -300,16 +331,61 @@ load_config() {
     "${PHASE1_ANAT_STEP4_DIR}" \
     "${PHASE1_ANAT_STEP5_DIR}" \
     "${PHASE1_ANAT_STEP6_DIR}" \
+    "${PHASE1_ANAT_STEP7_DIR}" \
+    "${PHASE1_ANAT_VIS_DIR}" \
     "${PHASE1_ANAT_STEPVIEW_DIR}" \
     "${ATLAS_DIR}" \
     "${FMRI_ROOT_DIR}" \
+    "${PHASE2_FMRI_VIS_DIR}" \
     "${PHASE2_FMRI_STEPVIEW_DIR}" \
     "${DWI_DIR}" \
+    "${PHASE3_DWI_VIS_DIR}" \
     "${PHASE3_DWI_STEPVIEW_DIR}" \
     "${PHASE4_SUMMARY_DIR}" \
     "${FINAL_DIR}" \
     "${REPORTS_DIR}" \
     "${COMPARE_DIR}"
+
+  ensure_visual_link "${PHASE0_INIT_DIR}/stepview" "${PHASE0_INIT_STEPVIEW_DIR}"
+  ensure_visual_link "${PHASE1_ANAT_DIR}/stepview" "${PHASE1_ANAT_STEPVIEW_DIR}"
+  ensure_visual_link "${PHASE1_ANAT_DIR}/visualization" "${PHASE1_ANAT_VIS_DIR}"
+  ensure_visual_link "${PHASE2_FMRI_DIR}/stepview" "${PHASE2_FMRI_STEPVIEW_DIR}"
+  ensure_visual_link "${PHASE2_FMRI_DIR}/visualization" "${PHASE2_FMRI_VIS_DIR}"
+  ensure_visual_link "${PHASE3_DWI_DIR}/stepview" "${PHASE3_DWI_STEPVIEW_DIR}"
+  ensure_visual_link "${PHASE3_DWI_DIR}/visualization" "${PHASE3_DWI_VIS_DIR}"
+}
+
+ensure_visual_link() {
+  local legacy_path="$1"
+  local target_path="$2"
+  local item=""
+
+  [[ -n "${legacy_path:-}" && -n "${target_path:-}" ]] || return 0
+  mkdir -p "${target_path}"
+
+  if [[ -L "${legacy_path}" ]]; then
+    ln -sfn "${target_path}" "${legacy_path}"
+    return 0
+  fi
+
+  if [[ -d "${legacy_path}" ]]; then
+    if [[ "$(cd "${legacy_path}" && pwd -P)" != "$(cd "${target_path}" && pwd -P)" ]]; then
+      (
+        shopt -s dotglob nullglob
+        for item in "${legacy_path}"/*; do
+          [[ -e "${item}" ]] || continue
+          if [[ ! -e "${target_path}/$(basename "${item}")" ]]; then
+            mv "${item}" "${target_path}/"
+          fi
+        done
+      )
+      rmdir "${legacy_path}" 2>/dev/null || true
+    fi
+  fi
+
+  if [[ ! -e "${legacy_path}" ]]; then
+    ln -sfn "${target_path}" "${legacy_path}"
+  fi
 }
 
 read_manifest_value() {
@@ -352,13 +428,14 @@ setup_fmri_trial_context() {
   FMRI_TRIAL_NAME="$trial_name"
   FMRI_TRIAL_INPUT_DIR="$init_trial_dir"
   FMRI_DIR="${FMRI_ROOT_DIR}/${FMRI_TRIAL_NAME}"
-  FMRI_STEPS_TRIAL_DIR="${FMRI_ROOT_DIR}/stepview/${FMRI_TRIAL_NAME}"
+  PHASE2_FMRI_TRIAL_VIS_DIR="${PHASE2_FMRI_VIS_DIR}/${FMRI_TRIAL_NAME}"
+  FMRI_STEPS_TRIAL_DIR="${PHASE2_FMRI_TRIAL_VIS_DIR}/stepview"
   FMRI_FUNC_INPUT="${FMRI_TRIAL_INPUT_DIR}/func.nii.gz"
   FMRI_FUNC_JSON="${FMRI_TRIAL_INPUT_DIR}/func.json"
   FMRI_FUNC_REF_INPUT="${FMRI_TRIAL_INPUT_DIR}/func_ref.nii.gz"
   FMRI_FUNC_REF_JSON="${FMRI_TRIAL_INPUT_DIR}/func_ref.json"
 
-  mkdir -p "$FMRI_DIR" "$FMRI_STEPS_TRIAL_DIR"
+  mkdir -p "$FMRI_DIR" "$PHASE2_FMRI_TRIAL_VIS_DIR" "$FMRI_STEPS_TRIAL_DIR"
 }
 
 link_step_product_nifti() {
@@ -406,6 +483,7 @@ setup_tools_env() {
   local fs_license="/data/bryang/project/CNS/tools/freesurfer/license.txt"
   local fastsurfer_home="${FASTSURFER_HOME:-/data/bryang/project/CNS/tools/FastSurfer}"
   local fastsurfer_python="${FASTSURFER_PYTHON:-${fastsurfer_home}/.venv/bin/python}"
+  local workbench_dir="${CARET7DIR:-/data/bryang/project/CNS/tools/connectome_workbench-v2.1.0/workbench/bin_linux64}"
   local tcsh_bin
   local shebang_stamp
 
@@ -415,6 +493,7 @@ setup_tools_env() {
   [[ -f "$fsl_home/etc/fslconf/fsl.sh" ]] || die "Missing FSL config: $fsl_home/etc/fslconf/fsl.sh"
   [[ -d "$fs_home" ]] || die "Missing FreeSurfer: $fs_home"
   [[ -f "$fs_license" ]] || die "Missing FreeSurfer license: $fs_license"
+  [[ -x "$workbench_dir/wb_command" ]] || die "Missing Workbench wb_command: $workbench_dir/wb_command"
   if [[ "${SURFER_TYPE:-free}" == "fast" ]]; then
     [[ -d "$fastsurfer_home" ]] || die "Missing FastSurfer: $fastsurfer_home"
     [[ -f "$fastsurfer_home/run_fastsurfer.sh" ]] || die "Missing FastSurfer entrypoint: $fastsurfer_home/run_fastsurfer.sh"
@@ -436,6 +515,8 @@ setup_tools_env() {
   export FREESURFER_HOME="$fs_home"
   export FASTSURFER_HOME="$fastsurfer_home"
   export FASTSURFER_PYTHON="$fastsurfer_python"
+  export CARET7DIR="$workbench_dir"
+  export HCPPIPEDIR="${HCPPIPEDIR:-/data/bryang/project/CNS/tools/HCPpipelines-5.0.0}"
 
   # Some FreeSurfer helper scripts still hardcode /bin/csh or /bin/tcsh.
   # Rewrite those shebangs to the tcsh bundled in the active env.
@@ -470,11 +551,17 @@ setup_tools_env() {
 
   # FSL 命令必须优先来自同一套完整安装，避免出现 epi_reg 来自 mri_env、
   # 但其内部再调用另一套 FSL 二进制的混搭状态。
-  export PATH="$FSLDIR/bin:$FSLDIR/share/fsl/bin:$ANTSPATH:$PATH"
+  export PATH="$CARET7DIR:$FSLDIR/bin:$FSLDIR/share/fsl/bin:$ANTSPATH:$PATH"
   export PYTHON_BIN="${CONDA_PREFIX}/bin/python"
   export MRTRIX_NTHREADS="${NTHREADS}"
   export OMP_NUM_THREADS="${NTHREADS}"
   export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS="${NTHREADS}"
+  export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/cns_matplotlib_${USER:-user}}"
+  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/cns_xdg_cache_${USER:-user}}"
+  export MESA_SHADER_CACHE_DIR="${MESA_SHADER_CACHE_DIR:-${XDG_CACHE_HOME}/mesa_shader_cache}"
+  export PYVISTA_OFF_SCREEN="${PYVISTA_OFF_SCREEN:-true}"
+  mkdir -p "${MPLCONFIGDIR}"
+  mkdir -p "${XDG_CACHE_HOME}" "${MESA_SHADER_CACHE_DIR}"
 
   # 这里要显式确认 FSL 主命令完整可用，避免 epi_reg 在运行中才暴露缺少 applywarp 的共性环境问题。
   require_cmd epi_reg

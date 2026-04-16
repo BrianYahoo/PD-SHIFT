@@ -1,24 +1,26 @@
-# CNS MRI Pipeline Structure
+# Structure
 
-本层描述当前 pipeline 的执行结构。
+本层只讲当前代码框架怎么组织，不展开实现细节。
 
-1. [总体结构](./pipeline.md)
-2. [phase0_init](./phases/phase0_init.md)
-3. [phase1_anat](./phases/phase1_anat.md)
-4. [phase2_fmri](./phases/phase2_fmri.md)
-5. [phase3_dwi](./phases/phase3_dwi.md)
-6. [phase4_summary](./phases/phase4_summary.md)
+本层重点：
 
-当前固定 phase 顺序：
+- pipeline 从哪里进入
+- phase 按什么顺序执行
+- 每个 step 用一句话负责什么
+- 专业术语在第一次出现时给出简短解释
 
-1. `phase0_init`
-2. `phase1_anat`
-3. `phase2_fmri`
-4. `phase3_dwi`
-5. `phase4_summary`
+本层不写：
 
-入口选择：
+- 具体输入输出路径
+- manifest（阶段状态记录文件）字段
+- 参数细节
+- 兼容逻辑
 
-- `--dataset hcp|parkinson`
-- `--surfer free|fast`
-- `--subject <subject_key>` 可选；不传则遍历 dataset raw 根目录下全部 subject。
+入口文档：
+
+- [pipeline](./pipeline.md)
+- [phase0_init](./phases/phase0_init.md)
+- [phase1_anat](./phases/phase1_anat.md)
+- [phase2_fmri](./phases/phase2_fmri.md)
+- [phase3_dwi](./phases/phase3_dwi.md)
+- [phase4_summary](./phases/phase4_summary.md)

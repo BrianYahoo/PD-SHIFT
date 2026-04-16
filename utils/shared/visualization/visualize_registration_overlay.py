@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--frames", default="")
     parser.add_argument("--frame-label", default="")
+    parser.add_argument("--variant-subdir", default="")
     parser.add_argument("--split-subdirs", action="store_true")
     parser.add_argument("--cortical-alpha", type=float, default=0.35)
     parser.add_argument("--subcortical-alpha", type=float, default=0.60)
@@ -222,6 +223,8 @@ def main():
         else:
             frame_dir = out_dir / args.frame_label if args.frame_label else out_dir
             frame_data = base
+        if args.variant_subdir:
+            frame_dir = frame_dir / args.variant_subdir
 
         if args.split_subdirs:
             for folder_name in subcortex_targets:

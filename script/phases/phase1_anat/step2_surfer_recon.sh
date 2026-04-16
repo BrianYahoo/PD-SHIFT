@@ -30,6 +30,8 @@ T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz"
 T1_MASK="${PHASE1_ANAT_STEP1_DIR}/t1_brain_mask.nii.gz"
 T1_FS_XMASK="${PHASE1_ANAT_STEP1_DIR}/t1_freesurfer_xmask.nii.gz"
 T1_FS_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_freesurfer_brain.nii.gz"
+T2_COREG_T1="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz"
+T2_COREG_T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
 SURFER_SUBJECTS_DIR="${PHASE1_ANAT_STEP2_DIR}/surfer_subjects"
 SURFER_SUBJECT_DIR="${SURFER_SUBJECTS_DIR}/${SUBJECT_ID}"
 APARC_ASEG="${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz"
@@ -55,6 +57,36 @@ FASTSURFER_ORIG_NU="${SURFER_SUBJECT_DIR}/mri/orig_nu.mgz"
 FASTSURFER_MASK="${SURFER_SUBJECT_DIR}/mri/mask.mgz"
 FS_EXPERT_OPTS="${PHASE1_ANAT_STEP2_DIR}/recon-all.expert.opts"
 PHASE0_STEP1_MANIFEST="${PHASE0_INIT_STEP1_DIR}/manifest.tsv"
+SURFER_T2_INPUT=""
+SURFER_USE_T2="0"
+if [[ "${PHASE1_T2_SURFER_ENABLE:-0}" == "1" && -f "${T2_COREG_T1}" ]]; then
+  SURFER_T2_INPUT="${T2_COREG_T1}"
+  SURFER_USE_T2="1"
+fi
+SURFER_HIRES_EFFECTIVE="0"
+SURFER_HIRES_REASON="disabled"
+if [[ "${SURFER_TYPE}" == "free" ]]; then
+  if "${PYTHON_BIN}" - "${T1_NATIVE_INPUT}" <<'PY' >/dev/null 2>&1
+import sys
+import nibabel as nib
+
+img = nib.load(sys.argv[1])
+zooms = img.header.get_zooms()[:3]
+raise SystemExit(0 if any(float(z) < 0.999 for z in zooms) else 1)
+PY
+  then
+    SURFER_HIRES_EFFECTIVE="1"
+    SURFER_HIRES_REASON="submillimeter_input"
+  fi
+  if [[ "${PHASE1_SURFER_HIRES:-0}" == "1" ]]; then
+    SURFER_HIRES_EFFECTIVE="1"
+    if [[ "${SURFER_HIRES_REASON}" == "submillimeter_input" ]]; then
+      SURFER_HIRES_REASON="config+submillimeter_input"
+    else
+      SURFER_HIRES_REASON="config"
+    fi
+  fi
+fi
 
 # 把 FreeSurfer/FastSurfer 的 SUBJECTS_DIR 导出给后续命令使用。
 export SUBJECTS_DIR="${SURFER_SUBJECTS_DIR}"
@@ -195,17 +227,18 @@ step2_requires_config_refresh() {
   local manifest_hires=""
   local manifest_fastsurfer_vox_size=""
   local manifest_t1_resample_voxel_size=""
+  local manifest_surfer_use_t2=""
   local current_t1_resample_voxel_size="${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}"
 
   if [[ ! -f "${STEP2_MANIFEST}" ]]; then
-    if [[ -d "${SURFER_SUBJECT_DIR}" ]] && { [[ "${PHASE1_SURFER_HIRES:-0}" == "1" ]] || [[ "${INIT_T1_RESAMPLE_ENABLE:-0}" == "1" ]] || { [[ "${SURFER_TYPE}" == "fast" && "${PHASE1_FASTSURFER_VOX_SIZE:-min}" != "min" ]]; }; }; then
+    if [[ -d "${SURFER_SUBJECT_DIR}" ]] && { [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] || [[ "${INIT_T1_RESAMPLE_ENABLE:-0}" == "1" ]] || [[ "${SURFER_USE_T2:-0}" == "1" ]] || { [[ "${SURFER_TYPE}" == "fast" && "${PHASE1_FASTSURFER_VOX_SIZE:-min}" != "min" ]]; }; }; then
       return 0
     fi
     return 1
   fi
 
   manifest_hires="$(step_manifest_value "${STEP2_MANIFEST}" "surfer_hires")"
-  if [[ "${PHASE1_SURFER_HIRES:-0}" == "1" && "${manifest_hires}" != "1" ]]; then
+  if [[ "${manifest_hires:-0}" != "${SURFER_HIRES_EFFECTIVE:-0}" ]]; then
     return 0
   fi
 
@@ -221,6 +254,11 @@ step2_requires_config_refresh() {
     if [[ "${manifest_t1_resample_voxel_size}" != "${current_t1_resample_voxel_size}" ]]; then
       return 0
     fi
+  fi
+
+  manifest_surfer_use_t2="$(step_manifest_value "${STEP2_MANIFEST}" "surfer_use_t2")"
+  if [[ "${manifest_surfer_use_t2:-0}" != "${SURFER_USE_T2:-0}" ]]; then
+    return 0
   fi
 
   return 1
@@ -251,19 +289,19 @@ subject_dir	${SURFER_SUBJECT_DIR}
 EOF
 }
 
-surfer_hires_args() {
-  if [[ "${PHASE1_SURFER_HIRES:-0}" == "1" ]]; then
-    printf '%s\n' "-hires"
-  fi
-}
-
 run_freesurfer() {
   local fs_xmask="${T1_FS_XMASK}"
   local recon_args=()
-  local hires_args=()
+  local t2_coreg="${T2_COREG_T1}"
   [[ -f "${fs_xmask}" ]] || fs_xmask="${T1_MASK}"
-  mapfile -t hires_args < <(surfer_hires_args)
-  recon_args+=("${hires_args[@]}")
+  if [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]]; then
+    recon_args+=(-hires)
+    log "[phase1_anat] Step2 enabling FreeSurfer -hires (${SURFER_HIRES_REASON})"
+  fi
+  if [[ "${SURFER_USE_T2}" == "1" && -f "${t2_coreg}" ]]; then
+    recon_args+=(-T2 "${t2_coreg}" -T2pial)
+    log "[phase1_anat] Step2 injecting T2 volume into FreeSurfer for precise pial placement"
+  fi
   if [[ -f "${FS_EXPERT_OPTS}" ]]; then
     recon_args+=(-expert "${FS_EXPERT_OPTS}" -xopts-overwrite)
   fi
@@ -303,6 +341,9 @@ run_fastsurfer() {
       --edits \
       --py "${FASTSURFER_PYTHON}"
     )
+    if [[ "${SURFER_USE_T2}" == "1" ]]; then
+      fastsurfer_args+=(--t2 "${SURFER_T2_INPUT}" --reg_mode none)
+    fi
     if [[ "$fastsurfer_vox_size" != "min" ]]; then
       fastsurfer_args+=(--vox_size "$fastsurfer_vox_size")
     fi
@@ -320,6 +361,9 @@ run_fastsurfer() {
       --parallel \
       --py "${FASTSURFER_PYTHON}"
     )
+    if [[ "${SURFER_USE_T2}" == "1" ]]; then
+      fastsurfer_args+=(--t2 "${SURFER_T2_INPUT}" --reg_mode none)
+    fi
     if [[ "$fastsurfer_vox_size" != "min" ]]; then
       fastsurfer_args+=(--vox_size "$fastsurfer_vox_size")
     fi
@@ -483,8 +527,11 @@ t1_freesurfer_brain	${T1_FS_BRAIN}
 surfer_subjects_dir	${SURFER_SUBJECTS_DIR}
 surfer_subject_dir	${SURFER_SUBJECT_DIR}
 surfer_engine_log	${SURFER_ENGINE_LOG}
-recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${T1_NATIVE_INPUT} -all -noskullstrip -xmask ${T1_FS_XMASK} -openmp ${NTHREADS}$( [[ "${PHASE1_SURFER_HIRES:-0}" == "1" ]] && printf ' -hires' )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version" )
-surfer_hires	${PHASE1_SURFER_HIRES:-0}
+recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${T1_NATIVE_INPUT} -all -noskullstrip -xmask ${T1_FS_XMASK} -openmp ${NTHREADS}$( [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] && printf ' -hires' )$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' -T2 %s -T2pial' "${SURFER_T2_INPUT}" )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' --t2 %s --reg_mode none' "${SURFER_T2_INPUT}" )" )
+surfer_hires	${SURFER_HIRES_EFFECTIVE:-0}
+surfer_hires_reason	${SURFER_HIRES_REASON}
+surfer_use_t2	${SURFER_USE_T2}
+surfer_t2_input	${SURFER_T2_INPUT}
 fastsurfer_vox_size	${PHASE1_FASTSURFER_VOX_SIZE:-min}
 t1_resample_voxel_size_mm	${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}
 recon_all_expert_opts	${FS_EXPERT_OPTS}
@@ -498,3 +545,6 @@ EOF
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 2 1 "surfer_input_t1" "${T1_NATIVE_INPUT}"
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 2 2 "surfer_aux_mask" "${T1_FS_XMASK}"
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 2 3 "aparc_aseg" "${APARC_ASEG}"
+if [[ "${SURFER_USE_T2}" == "1" ]]; then
+  link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 2 4 "surfer_input_t2" "${SURFER_T2_INPUT}"
+fi

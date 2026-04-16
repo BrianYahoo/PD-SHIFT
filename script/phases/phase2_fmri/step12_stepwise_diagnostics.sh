@@ -54,7 +54,7 @@ if [[ -f "${STEPRESULT_DONE}" \
 fi
 
 # 对 step5-10 的数据分别做 ROI 时序提取、FC 计算与可视化。
-"${PYTHON_BIN}" "${UTILS_DIR}/fmri_stepwise_diagnostics.py" \
+"${PYTHON_BIN}" "${UTILS_DIR}/phase2_fmri/step12/fmri_stepwise_diagnostics.py" \
   --atlas "${FMRI_DIR}/atlas_in_func.nii.gz" \
   --labels "${LABELS_TSV}" \
   --result-dir "${STEPRESULT_DIR}" \

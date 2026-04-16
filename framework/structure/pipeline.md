@@ -1,82 +1,58 @@
-# 总体结构
+# Pipeline Structure
 
 ## 入口
 
-单进程入口：
+单 subject 主入口：
 
-```bash
-bash /data/bryang/project/CNS/pipeline/script/process.sh --dataset hcp --surfer free --subject 100610
-bash /data/bryang/project/CNS/pipeline/script/process.sh --dataset parkinson --surfer fast --subject 001
-```
+- `script/process.sh`
 
-并行入口：
+批量并行入口：
 
-```bash
-bash /data/bryang/project/CNS/pipeline/script/run/FreeH.sh
-bash /data/bryang/project/CNS/pipeline/script/run/FastH.sh
-bash /data/bryang/project/CNS/pipeline/script/run/FreeP.sh
-bash /data/bryang/project/CNS/pipeline/script/run/FastP.sh
-```
+- `script/parallel.sh`
+- `script/run/FreeH.sh`
+- `script/run/FastH.sh`
+- `script/run/FreeP.sh`
+- `script/run/FastP.sh`
 
-`parallel.sh` 默认 `MAX_PARALLEL=5`，可通过环境变量覆盖。
+配置入口：
 
-## 配置来源
+- `config/pipeline.env`
+- `config/datasets/hcp.env`
+- `config/datasets/parkinson.env`
 
-全局默认值在：
+## 执行顺序
 
-- `/data/bryang/project/CNS/pipeline/config/pipeline.env`
+固定 phase 顺序：
 
-dataset 覆盖值在：
+1. `phase0_init` - Data Initialization
+2. `phase1_anat` - Anatomical Reconstruction
+3. `phase2_fmri` - Functional Connectivity
+4. `phase3_dwi` - Structural Connectivity
+5. `phase4_summary` - Summary and Reference Comparison
 
-- `/data/bryang/project/CNS/pipeline/config/datasets/hcp.env`
-- `/data/bryang/project/CNS/pipeline/config/datasets/parkinson.env`
+## 框架规则
 
-当前 dataset 行为：
+- 入口先加载全局 config，再叠加 dataset config。
+- workspace（每个 subject 的工作目录）由 dataset 和 `FreeSurfer` / `FastSurfer` 引擎共同决定。
+- 大多数 step 都带断点检测，依赖 manifest（阶段状态记录文件）和关键产物是否完整。
+- 所有可视化和 stepview 都统一写到 subject 根目录下的 `visualization/`。
 
-- HCP：`DATASET_IMPORT_MODE=hcp_nifti`，不重采样 T1，`DEFAULT_FUNC_TR=0.72` 作为 HCP minimal JSON fallback，`PHASE1_SURFER_HIRES=0`，FastSurfer 使用 CPU。
-- Parkinson：`DATASET_IMPORT_MODE=parkinson_dicom`，`INIT_T1_RESAMPLE_ENABLE=1`，`INIT_T1_RESAMPLE_VOXEL_SIZE=0.7`，`FUNC_REQUIRE_JSON_TR=1`，TR 必须来自 dcm2niix JSON，`PHASE1_SURFER_HIRES=1`，FastSurfer 使用 CUDA，并从配置 GPU 中按显存占用排序选择前 5 张卡分配。
+## Dataset 驱动
 
-## Workspace
+当前 dataset 差异主要由 config 控制，包括：
 
-每个 subject 的输出根目录由 dataset 和 surfer 共同决定：
+- 原始导入模式
+- T1（结构像）是否重采样
+- 是否导入和使用 T2（补充结构对比像）
+- 脑提取方法
+- FreeSurfer / FastSurfer 参数
+- Step3 是否启用多通道配准、深部 mask 和 Affine（仿射变换，允许整体缩放和剪切）
+- FastSurfer 是否启用 CUDA（GPU 加速）
 
-```text
-/data/bryang/project/CNS/data/HCP/workspace/<FreeSurfer|FastSurfer>/<subject>/
-/data/bryang/project/CNS/data/Parkinson/workspace/<FreeSurfer|FastSurfer>/<subject>/
-```
+## Phase Index
 
-每个 subject 下固定包含：
-
-```text
-bids/sub-xxx/
-derivatives/cns-pipeline/sub-xxx/phases/phase0_init/
-derivatives/cns-pipeline/sub-xxx/phases/phase1_anat/
-derivatives/cns-pipeline/sub-xxx/phases/phase2_fmri/
-derivatives/cns-pipeline/sub-xxx/phases/phase3_dwi/
-derivatives/cns-pipeline/sub-xxx/phases/phase4_summary/
-```
-
-## Phase
-
-1. `phase0_init`
-   功能：按 dataset config 导入 raw，标准化 T1/fMRI/DWI，写 BIDS 和 trial 清单。
-
-2. `phase1_anat`
-   功能：脑提取、FreeSurfer/FastSurfer 重建、MNI 到 native 的皮层下配准、Hybrid Atlas 生成。
-
-3. `phase2_fmri`
-   功能：对每个可处理 REST trial 做 rs-fMRI 预处理、BBR、ROI timeseries 和 FC。
-
-4. `phase3_dwi`
-   功能：DWI 预处理、FOD、ACT tractography、SC connectome。
-
-5. `phase4_summary`
-   功能：汇总 atlas/FC/SC，导出 TVP 建模矩阵，做参考对比，写报告。
-
-## 子文档
-
-1. [phase0_init](./phases/phase0_init.md)
-2. [phase1_anat](./phases/phase1_anat.md)
-3. [phase2_fmri](./phases/phase2_fmri.md)
-4. [phase3_dwi](./phases/phase3_dwi.md)
-5. [phase4_summary](./phases/phase4_summary.md)
+- [phase0_init](./phases/phase0_init.md)
+- [phase1_anat](./phases/phase1_anat.md)
+- [phase2_fmri](./phases/phase2_fmri.md)
+- [phase3_dwi](./phases/phase3_dwi.md)
+- [phase4_summary](./phases/phase4_summary.md)

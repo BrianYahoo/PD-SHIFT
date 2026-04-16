@@ -1,30 +1,108 @@
-# CNS Lab MRI Pipeline
+# PD-SHIFT 🧠
+**Parkinson's Disease Subcortical-cortical Hybrid Imaging & Fusion Toolkit**
 
-## Phase
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Bash](https://img.shields.io/badge/Language-Bash%20%7C%20Python-green)](#)
+[![Neuroimaging](https://img.shields.io/badge/Ecosystem-FreeSurfer%20%7C%20MRtrix3%20%7C%20ANTs%20%7C%20FSL-orange)](#)
 
-1. `phase0_init` - Data Initialization
-   - 功能：统一 HCP / Parkinson 原始输入，整理为后续统一读取的 BIDS 数据。
-   - 输入：HCP raw 或 Parkinson raw。
-   - 输出：`bids/sub-xxx/`，以及 `phases/phase0_init/` 下的标准化结果。
+**PD-SHIFT** is an advanced, high-fidelity neuroimaging preprocessing pipeline explicitly tailored for Parkinson's disease research. It bridges the anatomical gap between the highly folded cerebral cortex and crucial microscopic deep-brain targets via multi-spectral hybrid atlas fusion, providing a robust structural and functional connectome foundation for large-scale brain network modeling (e.g., digital twin brain simulations) and neuromodulation outcome prediction.
 
-2. `phase1_anat` - Anatomical Reconstruction
-   - 功能：完成个体解剖重建，并在原生空间生成 Hybrid Atlas。
-   - 输入：`phase0_init` 的 T1 与 BIDS 结构数据。
-   - 输出：`phases/phase1_anat/` 下的配准结果、逆向形变场与最终 atlas。
+---
 
-3. `phase2_fmri` - Functional Connectivity
-   - 功能：完成 rs-fMRI 预处理并提取功能连接结果。
-   - 输入：`phase0_init` 的 fMRI 数据与 `phase1_anat` 的个体 atlas。
-   - 输出：`phases/phase2_fmri/` 下的 trial 结果、stepview 与 FC 相关产物。
+## ✨ Core Capabilities
 
-4. `phase3_dwi` - Structural Connectivity
-   - 功能：完成 DWI 预处理、纤维追踪与结构连接矩阵构建。
-   - 输入：`phase0_init` 的 DWI 数据与 `phase1_anat` 的个体 atlas。
-   - 输出：`phases/phase3_dwi/` 下的预处理结果、tractography 与 SC 矩阵。
+* **Subcortical-Cortical Hybridization**: Seamlessly fuses standard cortical parcellations (FreeSurfer/FastSurfer) with ultra-high-resolution Lead-DBS atlases (e.g., DISTAL, Ewert), enabling millimeter-perfect targeting of the STN, GPi, and SN within a unified spatial framework.
+* **Multi-Spectral Target Anchoring**: Leverages multi-channel `ANTs SyN` registration (T1w + T2w) combined with localized subcortical penalty masks, utilizing T2 iron deposition shadows to lock onto basal ganglia structures despite disease-related atrophy or ventricular enlargement.
+* **Multimodal Functional Integration**: Implements a rigorous resting-state fMRI preprocessing framework, seamlessly projecting the hybridized high-precision atlas into functional space to extract clean BOLD signals and generate robust Functional Connectivity (FC) matrices.
+* **Quantitative Connectomics**: Generates biologically meaningful, `SIFT2`-weighted structural connectomes coupled with inverse-node-volume scaling (`-scale_invnodevol`), outputting dimensionless probability density matrices perfectly optimized for differential equation-based dynamic network modeling.
 
-5. `phase4_summary` - Summary and Reference Comparison
-   - 功能：汇总最终产物并完成参考数据对比。
-   - 输入：`phase1_anat`、`phase2_fmri`、`phase3_dwi` 的最终结果。
-   - 输出：`phases/phase4_summary/` 下的 final、reports 与 comparison。
+---
 
-具体细节可参考 [framework](framework/)。
+## 🏗️ Pipeline Architecture
+
+PD-SHIFT is engineered with a modular, highly fault-tolerant architecture designed for high-throughput GPU/CPU cluster environments. It consists of five distinct phases:
+
+### Phase 0: Data Initialization (`phase0_init`)
+* **Function:** Standardizes raw heterogeneous inputs into a unified framework.
+* **Process:** Automatically detects, converts (via `dcm2niix`), and organizes raw DICOM (Parkinson cohort) or NIfTI (HCP cohort) datasets into strict **BIDS** (Brain Imaging Data Structure) compliance. Handles submillimeter (e.g., 0.7mm) isometric resampling dynamically.
+
+### Phase 1: Anatomical Reconstruction (`phase1_anat`)
+* **Function:** Individualized cortical surface reconstruction and highly precise deep-brain atlas fusion.
+* **Process:** * Multi-contrast brain extraction (SynthStrip/BET) and N4 bias field correction.
+  * High-resolution cortical reconstruction via FreeSurfer/FastSurfer with T2-pial refinement.
+  * Dual-channel (T1+T2) ANTs SyN nonlinear registration anchored by native/MNI subcortical masks.
+  * Generates the individualized **Hybrid Atlas** (Cortical + DISTAL + SN).
+
+### Phase 2: Resting State fMRI Preprocessing (`phase2_fmri`)
+* **Function:** Rigorous functional time-series extraction and cleanup.
+* **Process:** * Slice-timing, susceptibility distortion correction (TOPUP), and rigid motion correction (MCFLIRT).
+  * Boundary-Based Registration (BBR) to native anatomical space.
+  * Covariate regression (GS/WM/CSF/HM), band-pass filtering, and FD-based scrubbing.
+  * Outputs cleaned regional BOLD signals and Functional Connectivity (FC) matrices based on the Hybrid Atlas.
+
+### Phase 3: dMRI Preprocessing & Tractography (`phase3_dwi`)
+* **Function:** High-order fiber tracking and structural connectome generation.
+* **Process:** * `MRtrix3` pre-processing: Denoising, Gibbs ringing removal, Eddy/Topup, and Bias correction.
+  * Multi-Shell Multi-Tissue Constrained Spherical Deconvolution (MSMT-CSD) and tissue response normalization.
+  * Anatomically-Constrained Tractography (ACT) with `iFOD2`, augmented by subcortical GM topological fixes to prevent premature streamline truncation at the STN/GPi.
+  * `SIFT2` filtering and connectome assembly across multiple radial search parameters.
+  * Outputs pure, dynamics-ready Structural Connectivity (SC) matrices.
+
+### Phase 4: Summary & Quality Control (`phase4_summary`)
+* **Function:** Automated pipeline auditing and visual verification.
+* **Process:** Compiles manifest ledgers across all phases, cross-references matrix integrities, and generates multi-slice overlay PNGs for rapid visual inspection of the Hybrid Atlas mapping and target engagement.
+
+---
+
+## 🛠️ Prerequisites & Installation
+
+PD-SHIFT relies on a synergistic ecosystem of industry-standard neuroimaging tools. It is designed to run on Linux/HPC environments.
+
+### 1. System Requirements
+* **OS:** Linux (Ubuntu 20.04/22.04 or CentOS 7+)
+* **Hardware:** Multi-core CPU, 32GB+ RAM. 
+* **GPU (Highly Recommended):** NVIDIA GPU for FastSurfer and FSL `eddy_cuda`. *(Note: If using Ampere/Ada Lovelace architectures like A100/RTX 5090, ensure you are using the appropriately compiled version of `eddy_cuda` to prevent fallback to CPU).*
+
+### 2. Core Dependencies
+Ensure the following neuroimaging suites are installed and correctly added to your system `$PATH`:
+* [**FSL**](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki) (v6.0+)
+* [**FreeSurfer**](https://surfer.nmr.mgh.harvard.edu/) (v7.0+) & [**FastSurfer**](https://github.com/Deep-MI/FastSurfer)
+* [**MRtrix3**](https://www.mrtrix.org/) (v3.0+)
+* [**ANTs**](https://github.com/ANTsX/ANTs) (Advanced Normalization Tools)
+* [**dcm2niix**](https://github.com/rordenlab/dcm2niix) (For DICOM to NIfTI conversion)
+
+### 3. Python Environment
+PD-SHIFT utilizes Python as the connective tissue for matrix operations and BIDS logic. We recommend using Conda:
+```bash
+conda create -n pdshift python=3.9
+conda activate pdshift
+pip install numpy nibabel scipy matplotlib
+```
+
+### 4. Atlas & Templates
+
+The pipeline leverages assets from [Lead-DBS](https://www.lead-dbs.org/). Ensure you have the following assets accessible in your tools directory:
+
+  * `MNI_ICBM_2009b_NLIN_ASYM` templates (T1w, T2w, and Subcortical Masks).
+  * High-resolution subcortical atlases (e.g., DISTAL, SN) mapped to the MNI 2009b space.
+
+### 5. Configuration
+
+Before running, you must specify your local paths and hardware configurations.
+
+1.  Clone the repository:
+    ```bash
+    git clone [https://github.com/yourusername/PD-SHIFT.git](https://github.com/yourusername/PD-SHIFT.git)
+    cd PD-SHIFT
+    ```
+2.  Configure your environment variables and tool paths in `pipeline.env` or the provided configuration templates.
+3.  Ensure the FreeSurfer license is correctly exported:
+    ```bash
+    export FS_LICENSE=/path/to/your/license.txt
+    ```
+
+-----
+
+## 📖 Detailed Framework Documentation
+
+For a deep dive into the mathematical decisions, bash array configurations, and execution step-views, please refer to the detailed structural breakdown in the [`framework/`] directory.

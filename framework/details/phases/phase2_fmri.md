@@ -3,258 +3,321 @@
 代码入口：
 
 ```text
-script/phases/phase2_fmri.sh
-script/phases/phase2_fmri/step*.sh
+/data/bryang/project/CNS/pipeline/script/phases/phase2_fmri.sh
+/data/bryang/project/CNS/pipeline/script/phases/phase2_fmri/step*.sh
 ```
 
-trial 根目录：
+trial 变量：
 
 ```text
-phase2_fmri/{trial_name}/
-phase2_fmri/stepview/{trial_name}/
-phase2_fmri/visualization/{trial_name}/
+FMRI_DIR=${PHASE2_FMRI_DIR}/${trial_name}
+FMRI_VIS_DIR=${SUBJECT_WORK_ROOT}/visualization/phase2_fmri/${trial_name}
+FMRI_STEPS_DIR=${FMRI_VIS_DIR}/stepview
 ```
 
-入口会跳过 timepoints < 2 的 trial。
+phase2 会跳过 timepoints 小于 2 的 trial。
 
 ## step1_remove_start_images
 
 ### 输入
 
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func.nii.gz` from phase0 step1
+```text
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func.nii.gz
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_trim.nii.gz
-phase2_fmri/stepview/{trial_name}/step1-1_raw_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step1-2_remove_start_images.nii.gz
+${FMRI_DIR}/func_trim.nii.gz
+${FMRI_STEPS_DIR}/step1-1_raw_input.nii.gz
+${FMRI_STEPS_DIR}/step1-2_remove_start_images.nii.gz
+```
+
+### 工具
+
+```text
+FSL fslroi
 ```
 
 ## step2_slice_timing
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_trim.nii.gz` from phase2 step1
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func.json` from phase0 step1
-
-TR 读取规则：
-
-- 优先读取 `func.json` 中的 `RepetitionTime`。
-- `FUNC_REQUIRE_JSON_TR=1` 时缺失即报错。
-- `FUNC_REQUIRE_JSON_TR=0` 时才允许使用 `DEFAULT_FUNC_TR` fallback。
+```text
+${FMRI_DIR}/func_trim.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func.json
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_stc.nii.gz
-phase2_fmri/stepview/{trial_name}/step2-1_slice_timing_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step2-2_slice_timing_output.nii.gz
+${FMRI_DIR}/func_stc.nii.gz
+${FMRI_STEPS_DIR}/step2-1_slice_timing_input.nii.gz
+${FMRI_STEPS_DIR}/step2-2_slice_timing_output.nii.gz
+```
+
+### 关键参数
+
+```text
+FUNC_REQUIRE_JSON_TR
+DEFAULT_FUNC_TR
+FMRI_SLICE_TIMING_TR_THRESHOLD
 ```
 
 ## step3_distortion_correction
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_stc.nii.gz` from phase2 step2
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func.json` from phase0 step1
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func_ref.nii.gz` from phase0 step1
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func_ref.json` from phase0 step1
+```text
+${FMRI_DIR}/func_stc.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func.json
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func_ref.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func_ref.json
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_topup.nii.gz
-phase2_fmri/{trial_name}/topup_acqparams.txt
-phase2_fmri/{trial_name}/topup_b0_main.nii.gz
-phase2_fmri/{trial_name}/topup_b0_ref.nii.gz
-phase2_fmri/{trial_name}/topup_b0_pair.nii.gz
-phase2_fmri/{trial_name}/topup_base*
-phase2_fmri/{trial_name}/topup_iout.nii.gz
-phase2_fmri/{trial_name}/topup_field.nii.gz
-phase2_fmri/{trial_name}/topup.log
-phase2_fmri/{trial_name}/applytopup.log
-phase2_fmri/stepview/{trial_name}/step3-1_distortion_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step3-2_distortion_output.nii.gz
+${FMRI_DIR}/func_topup.nii.gz
+${FMRI_DIR}/topup_acqparams.txt
+${FMRI_DIR}/topup_b0_main.nii.gz
+${FMRI_DIR}/topup_b0_ref.nii.gz
+${FMRI_DIR}/topup_b0_pair.nii.gz
+${FMRI_DIR}/topup_base*
+${FMRI_DIR}/topup_iout.nii.gz
+${FMRI_DIR}/topup_field.nii.gz
+${FMRI_DIR}/topup.log
+${FMRI_DIR}/applytopup.log
+${FMRI_STEPS_DIR}/step3-1_distortion_input.nii.gz
+${FMRI_STEPS_DIR}/step3-2_distortion_output.nii.gz
 ```
-
-如果 topup 条件不满足，只输出复制后的 `func_topup.nii.gz` 和 stepview。
 
 ## step4_motion_correction
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_topup.nii.gz` from phase2 step3
+```text
+${FMRI_DIR}/func_topup.nii.gz
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_mc.nii.gz
-phase2_fmri/{trial_name}/func_mc.par
-phase2_fmri/{trial_name}/func_mean.nii.gz
-phase2_fmri/{trial_name}/mcflirt.log
-phase2_fmri/visualization/{trial_name}/motion/motion_metrics.png
-phase2_fmri/visualization/{trial_name}/motion/framewise_displacement.tsv
-phase2_fmri/visualization/{trial_name}/motion/motion_metrics.done
-phase2_fmri/stepview/{trial_name}/step4-1_motion_corrected.nii.gz
-phase2_fmri/stepview/{trial_name}/step4-2_motion_reference.nii.gz
+${FMRI_DIR}/func_mc.nii.gz
+${FMRI_DIR}/func_mc.par
+${FMRI_DIR}/func_mean.nii.gz
+${FMRI_DIR}/mcflirt.log
+${FMRI_VIS_DIR}/motion/motion_metrics.png
+${FMRI_VIS_DIR}/motion/framewise_displacement.tsv
+${FMRI_VIS_DIR}/motion/motion_metrics.done
+${FMRI_STEPS_DIR}/step4-1_motion_corrected.nii.gz
+${FMRI_STEPS_DIR}/step4-2_motion_reference.nii.gz
 ```
 
 ## step5_bbr
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_mean.nii.gz` from phase2 step4
-- `phase1_anat/step1_brain_extract/t1_n4.nii.gz` from phase1 step1
-- `phase1_anat/step1_brain_extract/t1_brain.nii.gz` from phase1 step1
-- `phase1_anat/step1_brain_extract/t1_brain_mask.nii.gz` from phase1 step1
-- `phase1_anat/step2_surfer_recon/aparc+aseg.nii.gz` from phase1 step2
-- `phase1_anat/atlas/sub-xxx_desc-custom_dseg.nii.gz` from phase1 step6
-- `phase1_anat/atlas/sub-xxx_labels.tsv` from phase1 step6
+```text
+${FMRI_DIR}/func_mean.nii.gz
+${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz
+${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz
+${PHASE1_ANAT_STEP1_DIR}/t1_brain_mask.nii.gz
+${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz
+${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz
+${ATLAS_DIR}/${SUBJECT_ID}_desc-custom_dseg.nii.gz
+${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/bbr.mat
-phase2_fmri/{trial_name}/t1_to_func.mat
-phase2_fmri/{trial_name}/atlas_in_func.nii.gz
-phase2_fmri/{trial_name}/gs_mask_func_raw.nii.gz
-phase2_fmri/{trial_name}/gs_mask_func.nii.gz
-phase2_fmri/{trial_name}/wm_mask_t1.nii.gz
-phase2_fmri/{trial_name}/wm_mask_func_raw.nii.gz
-phase2_fmri/{trial_name}/wm_mask_func.nii.gz
-phase2_fmri/{trial_name}/csf_mask_t1.nii.gz
-phase2_fmri/{trial_name}/csf_mask_func_raw.nii.gz
-phase2_fmri/{trial_name}/csf_mask_func.nii.gz
-phase2_fmri/{trial_name}/flirt_*.log
-phase2_fmri/visualization/{trial_name}/bbr/t=<frame>/atlas/z=*.png
-phase2_fmri/visualization/{trial_name}/bbr/t=<frame>/subcortex/<ROI>/z=*.png
-phase2_fmri/visualization/{trial_name}/bbr/split_overlay.done
+${FMRI_DIR}/bbr.mat
+${FMRI_DIR}/t1_to_func.mat
+${FMRI_DIR}/wmseg_t1.nii.gz
+${FMRI_DIR}/atlas_in_func.nii.gz
+${FMRI_DIR}/t2_in_func.nii.gz
+${FMRI_DIR}/gs_mask_func_raw.nii.gz
+${FMRI_DIR}/gs_mask_func.nii.gz
+${FMRI_DIR}/wm_mask_t1.nii.gz
+${FMRI_DIR}/wm_mask_func_raw.nii.gz
+${FMRI_DIR}/wm_mask_func.nii.gz
+${FMRI_DIR}/csf_mask_t1.nii.gz
+${FMRI_DIR}/csf_mask_func_raw.nii.gz
+${FMRI_DIR}/csf_mask_func.nii.gz
+${FMRI_DIR}/epi_reg.log
+${FMRI_DIR}/flirt_atlas_to_func.log
+${FMRI_DIR}/flirt_t2_to_func.log
+${FMRI_DIR}/flirt_gs_to_func.log
+${FMRI_DIR}/flirt_wm_to_func.log
+${FMRI_DIR}/flirt_csf_to_func.log
 ```
 
-`atlas/` 输出全 z 切片，`subcortex/<ROI>/` 只输出包含该 ROI 的 z 切片。
-
-Stepview：
+BBR 可视化目录：
 
 ```text
-phase2_fmri/stepview/{trial_name}/step5-1_bbr_reference.nii.gz
-phase2_fmri/stepview/{trial_name}/step5-2_atlas_in_func.nii.gz
-phase2_fmri/stepview/{trial_name}/step5-3_global_mask.nii.gz
-phase2_fmri/stepview/{trial_name}/step5-4_wm_mask.nii.gz
-phase2_fmri/stepview/{trial_name}/step5-5_csf_mask.nii.gz
+${FMRI_VIS_DIR}/bbr/t=10/t1/atlas/z=*.png
+${FMRI_VIS_DIR}/bbr/t=10/t1/subcortex/<ROI>/z=*.png
+${FMRI_VIS_DIR}/bbr/t=20/t1/atlas/z=*.png
+...
+${FMRI_VIS_DIR}/bbr/t=100/t1/atlas/z=*.png
+${FMRI_VIS_DIR}/bbr/t=100/t1/subcortex/<ROI>/z=*.png
+${FMRI_VIS_DIR}/bbr/t=10/t2/atlas/z=*.png
+${FMRI_VIS_DIR}/bbr/t=10/t2/subcortex/<ROI>/z=*.png
+...
+${FMRI_VIS_DIR}/bbr/t=100/t2/atlas/z=*.png
+${FMRI_VIS_DIR}/bbr/t=100/t2/subcortex/<ROI>/z=*.png
+${FMRI_VIS_DIR}/bbr/split_overlay.done
+```
+
+固定 frame 列表：
+
+```text
+10,20,30,40,50,60,70,80,90,100
+```
+
+subcortex PNG 规则：
+
+- `atlas/` 输出所有 z。
+- `subcortex/<ROI>/` 只输出实际包含该 ROI 的 z。
+
+### Stepview
+
+```text
+${FMRI_STEPS_DIR}/step5-1_bbr_reference.nii.gz
+${FMRI_STEPS_DIR}/step5-2_atlas_in_func.nii.gz
+${FMRI_STEPS_DIR}/step5-3_global_mask.nii.gz
+${FMRI_STEPS_DIR}/step5-4_wm_mask.nii.gz
+${FMRI_STEPS_DIR}/step5-5_csf_mask.nii.gz
+${FMRI_STEPS_DIR}/step5-6_t2_in_func.nii.gz
 ```
 
 ## step6_spatially_smooth
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_mc.nii.gz` from phase2 step4
+```text
+${FMRI_DIR}/func_mc.nii.gz
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_smooth.nii.gz
-phase2_fmri/stepview/{trial_name}/step6-1_smooth_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step6-2_smooth_output.nii.gz
+${FMRI_DIR}/func_smooth.nii.gz
+${FMRI_STEPS_DIR}/step6-1_smooth_input.nii.gz
+${FMRI_STEPS_DIR}/step6-2_smooth_output.nii.gz
 ```
 
 ## step7_temporally_detrend
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_smooth.nii.gz` from phase2 step6
-- `phase2_fmri/{trial_name}/gs_mask_func.nii.gz` from phase2 step5
+```text
+${FMRI_DIR}/func_smooth.nii.gz
+${FMRI_DIR}/gs_mask_func.nii.gz
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_detrend.nii.gz
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_detrend_qc.json
-phase2_fmri/stepview/{trial_name}/step7-1_detrend_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step7-2_detrend_output.nii.gz
+${FMRI_DIR}/func_detrend.nii.gz
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_detrend_qc.json
+${FMRI_STEPS_DIR}/step7-1_detrend_input.nii.gz
+${FMRI_STEPS_DIR}/step7-2_detrend_output.nii.gz
 ```
 
 ## step8_regress_out_covariates
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_detrend.nii.gz` from phase2 step7
-- `phase2_fmri/{trial_name}/func_mc.par` from phase2 step4
-- `phase2_fmri/{trial_name}/gs_mask_func.nii.gz` from phase2 step5
-- `phase2_fmri/{trial_name}/wm_mask_func.nii.gz` from phase2 step5
-- `phase2_fmri/{trial_name}/csf_mask_func.nii.gz` from phase2 step5
+```text
+${FMRI_DIR}/func_detrend.nii.gz
+${FMRI_DIR}/func_mc.par
+${FMRI_DIR}/gs_mask_func.nii.gz
+${FMRI_DIR}/wm_mask_func.nii.gz
+${FMRI_DIR}/csf_mask_func.nii.gz
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_regress.nii.gz
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_regress_qc.json
-phase2_fmri/stepview/{trial_name}/step8-1_regress_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step8-2_regress_output.nii.gz
+${FMRI_DIR}/func_regress.nii.gz
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_regress_qc.json
+${FMRI_STEPS_DIR}/step8-1_regress_input.nii.gz
+${FMRI_STEPS_DIR}/step8-2_regress_output.nii.gz
 ```
 
 ## step9_temporally_filter
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_regress.nii.gz` from phase2 step8
-- `phase2_fmri/{trial_name}/gs_mask_func.nii.gz` from phase2 step5
-- `phase0_init/step1_bids_standardize/trials/{trial_name}/func.json` from phase0 step1
-
-TR 读取规则同 step2。
+```text
+${FMRI_DIR}/func_regress.nii.gz
+${FMRI_DIR}/gs_mask_func.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/${trial_name}/func.json
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/func_filter.nii.gz
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_filter_qc.json
-phase2_fmri/stepview/{trial_name}/step9-1_filter_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step9-2_filter_output.nii.gz
+${FMRI_DIR}/func_filter.nii.gz
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_filter_qc.json
+${FMRI_STEPS_DIR}/step9-1_filter_input.nii.gz
+${FMRI_STEPS_DIR}/step9-2_filter_output.nii.gz
 ```
 
 ## step10_scrubbing_mark
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_filter.nii.gz` from phase2 step9
-- `phase2_fmri/{trial_name}/func_mc.par` from phase2 step4
+```text
+${FMRI_DIR}/func_filter.nii.gz
+${FMRI_DIR}/func_mc.par
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_FD_power.txt
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_scrub_mask.txt
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_scrub_qc.json
-phase2_fmri/{trial_name}/toxic_frames.nii.gz
-phase2_fmri/stepview/{trial_name}/step10-1_scrubbing_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step10-2_toxic_frames.nii.gz
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_FD_power.txt
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_scrub_mask.txt
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_scrub_qc.json
+${FMRI_DIR}/toxic_frames.nii.gz
+${FMRI_STEPS_DIR}/step10-1_scrubbing_input.nii.gz
+${FMRI_STEPS_DIR}/step10-2_toxic_frames.nii.gz
 ```
 
 ## step11_extract_signal
 
 ### 输入
 
-- `phase2_fmri/{trial_name}/func_filter.nii.gz` from phase2 step9
-- `phase2_fmri/{trial_name}/atlas_in_func.nii.gz` from phase2 step5
-- `phase2_fmri/{trial_name}/sub-xxx_{trial_name}_detrend_qc.json` from phase2 step7
-- `phase2_fmri/{trial_name}/sub-xxx_{trial_name}_regress_qc.json` from phase2 step8
-- `phase2_fmri/{trial_name}/sub-xxx_{trial_name}_filter_qc.json` from phase2 step9
-- `phase2_fmri/{trial_name}/sub-xxx_{trial_name}_scrub_qc.json` from phase2 step10
-- `phase1_anat/atlas/sub-xxx_labels.tsv` from phase1 step6
+```text
+${FMRI_DIR}/func_filter.nii.gz
+${FMRI_DIR}/atlas_in_func.nii.gz
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_detrend_qc.json
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_regress_qc.json
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_filter_qc.json
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_scrub_qc.json
+${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv
+```
 
 ### 输出
 
 ```text
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_FC_pearson.csv
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_FC_fisherz.csv
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_FC_timeseries.tsv
-phase2_fmri/{trial_name}/sub-xxx_{trial_name}_FC_qc.json
-phase2_fmri/{trial_name}/manifest.tsv
-phase2_fmri/{trial_name}/stepresult/stepwise.done
-phase2_fmri/{trial_name}/stepresult/step5_bbr_fc_pearson.csv
-phase2_fmri/{trial_name}/stepresult/step5_bbr_fc_fisherz.csv
-phase2_fmri/stepview/{trial_name}/step11-1_extract_signal_input.nii.gz
-phase2_fmri/stepview/{trial_name}/step11-2_extract_signal_atlas.nii.gz
-phase2_fmri/stepview/{trial_name}/stepsignal/
-phase2_fmri/stepview/{trial_name}/stepfc/
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_FC_pearson.csv
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_FC_fisherz.csv
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_FC_timeseries.tsv
+${FMRI_DIR}/${SUBJECT_ID}_${trial_name}_FC_qc.json
+${FMRI_DIR}/manifest.tsv
+${FMRI_DIR}/stepresult/stepwise.done
+${FMRI_DIR}/stepresult/step5_bbr_fc_pearson.csv
+${FMRI_DIR}/stepresult/step5_bbr_fc_fisherz.csv
+${FMRI_STEPS_DIR}/step11-1_extract_signal_input.nii.gz
+${FMRI_STEPS_DIR}/step11-2_extract_signal_atlas.nii.gz
+```
+
+step12 诊断输出位于：
+
+```text
+${FMRI_VIS_DIR}/stepview/stepsignal/
+${FMRI_VIS_DIR}/stepview/stepfc/
 ```

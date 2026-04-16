@@ -32,7 +32,7 @@ if [[ -f "$FUNC_OUTPUT" && -f "$DETREND_QC" ]]; then
 fi
 
 # 对时间序列执行线性去趋势。
-"$PYTHON_BIN" "${UTILS_DIR}/fmri_temporal_detrend.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step7/fmri_temporal_detrend.py" \
   --func "$FUNC_INPUT" \
   --brain-mask "${FMRI_DIR}/gs_mask_func.nii.gz" \
   --detrend-order "$FMRI_DETREND_ORDER" \

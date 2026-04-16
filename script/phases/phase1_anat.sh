@@ -13,6 +13,7 @@ PHASE1_STEPS=(
   "phase1_anat/step4_warpdrive_review.sh"
   "phase1_anat/step5_save_inverse_warp.sh"
   "phase1_anat/step6_distal_inverse_fusion.sh"
+  "phase1_anat/step7_t1t2_myelin.sh"
 )
 
 # 依次执行 phase1_anat 的全部 step。

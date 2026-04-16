@@ -24,26 +24,47 @@ require_cmd fslmaths
 T1_N4="${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz"
 T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz"
 T1_MASK="${PHASE1_ANAT_STEP1_DIR}/t1_brain_mask.nii.gz"
+T2_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
 APARC_ASEG="${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz"
 ATLAS_T1="${ATLAS_DIR}/${SUBJECT_ID}_desc-custom_dseg.nii.gz"
 ATLAS_LABELS="${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv"
-VIS_BBR_DIR="${PHASE2_FMRI_DIR}/visualization/${FMRI_TRIAL_NAME}/bbr"
+VIS_BBR_DIR="${PHASE2_FMRI_TRIAL_VIS_DIR}/bbr"
 VIS_BBR_DONE="${VIS_BBR_DIR}/split_overlay.done"
 VIS_BBR_FRAMES="10,20,30,40,50,60,70,80,90,100"
+VIS_BBR_FIRST_FRAME="${VIS_BBR_FRAMES%%,*}"
+T2_IN_FUNC="${FMRI_DIR}/t2_in_func.nii.gz"
+USE_T2_BBR_VIS="0"
+if [[ -f "${T2_BRAIN}" ]]; then
+  USE_T2_BBR_VIS="1"
+fi
+
+bbr_visualizations_ready() {
+  [[ -f "${VIS_BBR_DONE}" ]] || return 1
+  compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/t1/atlas/z=*.png" > /dev/null || return 1
+  compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/t1/subcortex/AC/z=*.png" > /dev/null || return 1
+  if [[ "${USE_T2_BBR_VIS}" == "1" ]]; then
+    compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/t2/atlas/z=*.png" > /dev/null || return 1
+    compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/t2/subcortex/AC/z=*.png" > /dev/null || return 1
+  fi
+}
 
 # 回填 stepview 中的 BBR 参考像。
 link_step_product_nifti 5 1 "bbr_reference" "${FMRI_DIR}/func_mean.nii.gz"
 
 # 如果所有配准和掩膜结果都已存在且关键 NIfTI 可读，则直接回填 stepview 并跳过。
-if [[ -f "${FMRI_DIR}/bbr.mat" && -f "${FMRI_DIR}/t1_to_func.mat" && -f "${VIS_BBR_DONE}" ]] \
+if [[ -f "${FMRI_DIR}/bbr.mat" && -f "${FMRI_DIR}/t1_to_func.mat" ]] \
   && nifti_is_readable "${FMRI_DIR}/atlas_in_func.nii.gz" \
   && nifti_is_readable "${FMRI_DIR}/gs_mask_func.nii.gz" \
   && nifti_is_readable "${FMRI_DIR}/wm_mask_func.nii.gz" \
-  && nifti_is_readable "${FMRI_DIR}/csf_mask_func.nii.gz"; then
+  && nifti_is_readable "${FMRI_DIR}/csf_mask_func.nii.gz" \
+  && bbr_visualizations_ready; then
   link_step_product_nifti 5 2 "atlas_in_func" "${FMRI_DIR}/atlas_in_func.nii.gz"
   link_step_product_nifti 5 3 "global_mask" "${FMRI_DIR}/gs_mask_func.nii.gz"
   link_step_product_nifti 5 4 "wm_mask" "${FMRI_DIR}/wm_mask_func.nii.gz"
   link_step_product_nifti 5 5 "csf_mask" "${FMRI_DIR}/csf_mask_func.nii.gz"
+  if [[ "${USE_T2_BBR_VIS}" == "1" && -f "${T2_IN_FUNC}" ]]; then
+    link_step_product_nifti 5 6 "t2_in_func" "${T2_IN_FUNC}"
+  fi
   log "[phase2_fmri] Step5 already done for ${SUBJECT_ID} ${FMRI_TRIAL_NAME}"
   exit 0
 fi
@@ -84,6 +105,13 @@ if [[ ! -f "${FMRI_DIR}/atlas_in_func.nii.gz" ]]; then
 fi
 link_step_product_nifti 5 2 "atlas_in_func" "${FMRI_DIR}/atlas_in_func.nii.gz"
 
+if [[ "${USE_T2_BBR_VIS}" == "1" && ! -f "${T2_IN_FUNC}" ]]; then
+  flirt -in "${T2_BRAIN}" -ref "${FMRI_DIR}/func_mean.nii.gz" -out "${T2_IN_FUNC}" -applyxfm -init "${FMRI_DIR}/t1_to_func.mat" -interp trilinear >"${FMRI_DIR}/flirt_t2_to_func.log" 2>&1
+fi
+if [[ "${USE_T2_BBR_VIS}" == "1" && -f "${T2_IN_FUNC}" ]]; then
+  link_step_product_nifti 5 6 "t2_in_func" "${T2_IN_FUNC}"
+fi
+
 # 将全脑掩膜投到功能像空间，后续用于全脑信号和可视化。
 if [[ ! -f "${FMRI_DIR}/gs_mask_func.nii.gz" ]]; then
   flirt -in "$T1_MASK" -ref "${FMRI_DIR}/func_mean.nii.gz" -out "${FMRI_DIR}/gs_mask_func_raw.nii.gz" -applyxfm -init "${FMRI_DIR}/t1_to_func.mat" -interp nearestneighbour >"${FMRI_DIR}/flirt_gs_to_func.log" 2>&1
@@ -123,11 +151,26 @@ link_step_product_nifti 5 5 "csf_mask" "${FMRI_DIR}/csf_mask_func.nii.gz"
 
 # 在 BBR 完成后，把图谱叠加到若干时间点的功能像上，便于检查 atlas 投影是否准确。
 mkdir -p "${VIS_BBR_DIR}"
-"${PYTHON_BIN}" "${UTILS_DIR}/visualize_registration_overlay.py" \
+"${PYTHON_BIN}" "${UTILS_DIR}/shared/visualization/visualize_registration_overlay.py" \
   --base "${FMRI_DIR}/func_mc.nii.gz" \
   --atlas "${FMRI_DIR}/atlas_in_func.nii.gz" \
   --labels-tsv "${ATLAS_LABELS}" \
   --out-dir "${VIS_BBR_DIR}" \
   --frames "${VIS_BBR_FRAMES}" \
+  --variant-subdir t1 \
   --split-subdirs
+if [[ "${USE_T2_BBR_VIS}" == "1" && -f "${T2_IN_FUNC}" ]]; then
+  IFS=',' read -r -a vis_bbr_frame_list <<<"${VIS_BBR_FRAMES}"
+  for vis_frame in "${vis_bbr_frame_list[@]}"; do
+    [[ "${vis_frame}" =~ ^[0-9]+$ ]] || continue
+    "${PYTHON_BIN}" "${UTILS_DIR}/shared/visualization/visualize_registration_overlay.py" \
+      --base "${T2_IN_FUNC}" \
+      --atlas "${FMRI_DIR}/atlas_in_func.nii.gz" \
+      --labels-tsv "${ATLAS_LABELS}" \
+      --out-dir "${VIS_BBR_DIR}" \
+      --frame-label "t=${vis_frame}" \
+      --variant-subdir t2 \
+      --split-subdirs
+  done
+fi
 touch "${VIS_BBR_DONE}"

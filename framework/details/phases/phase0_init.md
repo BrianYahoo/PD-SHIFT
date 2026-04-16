@@ -3,103 +3,153 @@
 代码入口：
 
 ```text
-script/phases/phase0_init.sh
-script/phases/phase0_init/step1_bids_standardize.sh
+/data/bryang/project/CNS/pipeline/script/phases/phase0_init.sh
+/data/bryang/project/CNS/pipeline/script/phases/phase0_init/step1_bids_standardize.sh
+```
+
+当前 phase 只有一个真实 step：
+
+```text
+${PHASE0_INIT_DIR}/step1_bids_standardize
 ```
 
 ## step1_bids_standardize
 
 ### 输入
 
-配置输入：
+配置文件：
 
-- `config/pipeline.env`
-- `config/datasets/hcp.env` 或 `config/datasets/parkinson.env`
+```text
+/data/bryang/project/CNS/pipeline/config/pipeline.env
+/data/bryang/project/CNS/pipeline/config/datasets/hcp.env
+/data/bryang/project/CNS/pipeline/config/datasets/parkinson.env
+```
 
-HCP raw 输入：
+HCP 原始输入模式：
 
-- `raw/<subject>/unprocessed/3T/T1w_MPR1/` 或 `T1w_MPR2/`
-- `raw/<subject>/unprocessed/3T/Diffusion/`
-- `raw/<subject>/unprocessed/3T/rfMRI_REST*/`
+```text
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/T1w_MPR1/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/T1w_MPR2/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/T2w_SPC1/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/T2w_SPC2/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/Diffusion/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/rfMRI_REST*/
+${RAW_ROOT}/${SUBJECT_KEY}/unprocessed/3T/SpinEchoFieldMap*/
+```
 
-Parkinson raw 输入：
+Parkinson 原始输入模式：
 
-- `raw/<subject>/t1_*`、`T1_*` 或 `mprage*`
-- `raw/<subject>/dMRI*` 或 `dwi*`
-- `raw/<subject>/restfMRI*`
+```text
+${RAW_ROOT}/${SUBJECT_KEY}/t1_*
+${RAW_ROOT}/${SUBJECT_KEY}/T1_*
+${RAW_ROOT}/${SUBJECT_KEY}/mprage*
+${RAW_ROOT}/${SUBJECT_KEY}/dMRI*
+${RAW_ROOT}/${SUBJECT_KEY}/dwi*
+${RAW_ROOT}/${SUBJECT_KEY}/restfMRI*
+${RAW_ROOT}/${SUBJECT_KEY}/<由 INIT_T2_SOURCE_PATTERNS 命中的 T2 目录>
+```
 
-### 标准化输出
+### 核心输出
 
 step 目录：
 
 ```text
-phases/phase0_init/step1_bids_standardize/
+${PHASE0_INIT_STEP1_DIR}/
 ```
 
-核心输出：
+固定核心文件：
 
 ```text
-manifest.tsv
-func_trials.tsv
-t1.nii.gz
-t1.json
-dwi.nii.gz
-dwi.bval
-dwi.bvec
-dwi.json
-dwi_rev.nii.gz
-dwi_rev.bval
-dwi_rev.bvec
-dwi_rev.json
-func.nii.gz
-func.json
-func_ref.nii.gz
-func_ref.json
+${PHASE0_INIT_STEP1_DIR}/manifest.tsv
+${PHASE0_INIT_STEP1_DIR}/func_trials.tsv
+${PHASE0_INIT_STEP1_DIR}/t1.nii.gz
+${PHASE0_INIT_STEP1_DIR}/t1.json
+${PHASE0_INIT_STEP1_DIR}/dwi.nii.gz
+${PHASE0_INIT_STEP1_DIR}/dwi.bval
+${PHASE0_INIT_STEP1_DIR}/dwi.bvec
+${PHASE0_INIT_STEP1_DIR}/dwi.json
 ```
 
-可选原始 T1 保留：
+可选文件：
 
 ```text
-t1_ori.nii.gz
+${PHASE0_INIT_STEP1_DIR}/t1_ori.nii.gz
+${PHASE0_INIT_STEP1_DIR}/t2.nii.gz
+${PHASE0_INIT_STEP1_DIR}/t2.json
+${PHASE0_INIT_STEP1_DIR}/dwi_rev.nii.gz
+${PHASE0_INIT_STEP1_DIR}/dwi_rev.bval
+${PHASE0_INIT_STEP1_DIR}/dwi_rev.bvec
+${PHASE0_INIT_STEP1_DIR}/dwi_rev.json
+${PHASE0_INIT_STEP1_DIR}/func.nii.gz
+${PHASE0_INIT_STEP1_DIR}/func.json
+${PHASE0_INIT_STEP1_DIR}/func_ref.nii.gz
+${PHASE0_INIT_STEP1_DIR}/func_ref.json
 ```
 
-trial 输出：
+trial 子目录：
 
 ```text
-trials/{trial_name}/func.nii.gz
-trials/{trial_name}/func.json
-trials/{trial_name}/func_ref.nii.gz
-trials/{trial_name}/func_ref.json
+${PHASE0_INIT_STEP1_DIR}/trials/<trial_name>/func.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/<trial_name>/func.json
+${PHASE0_INIT_STEP1_DIR}/trials/<trial_name>/func_ref.nii.gz
+${PHASE0_INIT_STEP1_DIR}/trials/<trial_name>/func_ref.json
 ```
 
-转换追溯目录：
+标准化追溯目录：
 
 ```text
-raw_standardized/t1/
-raw_standardized/dwi/
-raw_standardized/dwi_rev/
-raw_standardized/func/{trial_name}/
-raw_standardized/func_ref/{trial_name}/
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/t1/
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/dwi/
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/dwi_rev/
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/func/<trial_name>/
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/func_ref/<trial_name>/
+```
+
+T1 重采样产物命名：
+
+```text
+${PHASE0_INIT_STEP1_DIR}/raw_standardized/t1/t1_resampled_<slug>mm.nii.gz
+```
+
+例如 `0.7 mm` 会写成：
+
+```text
+t1_resampled_0p7mm.nii.gz
 ```
 
 ### BIDS 输出
 
 ```text
-bids/sub-xxx/anat/sub-xxx_T1w.nii.gz
-bids/sub-xxx/anat/sub-xxx_T1w.json
-bids/sub-xxx/dwi/sub-xxx_dwi.nii.gz
-bids/sub-xxx/dwi/sub-xxx_dwi.bval
-bids/sub-xxx/dwi/sub-xxx_dwi.bvec
-bids/sub-xxx/dwi/sub-xxx_dwi.json
-bids/sub-xxx/dwi/sub-xxx_dir-rev_dwi.nii.gz
-bids/sub-xxx/dwi/sub-xxx_dir-rev_dwi.bval
-bids/sub-xxx/dwi/sub-xxx_dir-rev_dwi.bvec
-bids/sub-xxx/dwi/sub-xxx_dir-rev_dwi.json
-bids/sub-xxx/func/sub-xxx_task-rest_run-*_dir-*_bold.nii.gz
-bids/sub-xxx/func/sub-xxx_task-rest_run-*_dir-*_bold.json
+${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T1w.nii.gz
+${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T1w.json
+${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz
+${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.json
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.nii.gz
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.bval
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.bvec
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.json
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dir-rev_dwi.nii.gz
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dir-rev_dwi.bval
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dir-rev_dwi.bvec
+${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dir-rev_dwi.json
+${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-*_dir-*_bold.nii.gz
+${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-*_dir-*_bold.json
 ```
 
-### Manifest 字段
+`T2w` 和 `dir-rev` 仅在相应输入存在时写出。
+
+### Stepview
+
+```text
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-1_t1_bids_input.nii.gz
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-2_dwi_bids_input.nii.gz
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-3_dwi_reverse_input.nii.gz
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-4_fmri_primary_input.nii.gz
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-5_t1_ori.nii.gz
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview/step1-6_t2_bids_input.nii.gz
+```
+
+### Manifest 关键字段
 
 ```text
 subject_id
@@ -108,10 +158,13 @@ raw_standardization_root
 t1_source
 t1_original_zooms_mm
 t1_resampled
-t1_resampled_to_1mm
+t1_resampled_status
 t1_resample_enable
 t1_resample_config
 t1_resample_voxel_size_mm
+t2_enable
+t2_available
+t2_source
 dwi_source
 dwi_rev_source
 func_source
@@ -120,38 +173,14 @@ func_trials_tsv
 bids_subject_dir
 ```
 
-`t1_resampled_to_1mm` 是兼容旧字段名；当前新逻辑以 `t1_resample_enable` 和 `t1_resample_voxel_size_mm` 为准。
-
-### Stepview
+### 关键参数
 
 ```text
-phase0_init/stepview/step1-1_t1_bids_input.nii.gz
-phase0_init/stepview/step1-2_dwi_bids_input.nii.gz
-phase0_init/stepview/step1-3_dwi_reverse_input.nii.gz
-phase0_init/stepview/step1-4_fmri_primary_input.nii.gz
-phase0_init/stepview/step1-5_t1_ori.nii.gz
+DATASET_IMPORT_MODE
+INIT_T1_RESAMPLE_ENABLE
+INIT_T1_RESAMPLE_VOXEL_SIZE
+INIT_T2_ENABLE
+INIT_T2_SOURCE_PATTERNS
+INIT_T2_HCP_DIR_CANDIDATES
+INIT_T2_HCP_FILE_PATTERNS
 ```
-
-### 下游读取
-
-phase1 读取：
-
-- `t1.nii.gz`
-- `t1.json`
-- BIDS T1
-
-phase2 读取：
-
-- `trials/{trial_name}/func.nii.gz`
-- `trials/{trial_name}/func.json`
-- `trials/{trial_name}/func_ref.nii.gz`
-- `trials/{trial_name}/func_ref.json`
-- `func_trials.tsv`
-
-phase3 读取：
-
-- `dwi.nii.gz`
-- `dwi.bval`
-- `dwi.bvec`
-- `dwi.json`
-- reverse PE 文件如果存在则读取。

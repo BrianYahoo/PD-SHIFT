@@ -62,7 +62,7 @@ if [[ -f "$FUNC_OUTPUT" && -f "$FILTER_QC" ]]; then
 fi
 
 # 对时间序列执行带通滤波。
-"$PYTHON_BIN" "${UTILS_DIR}/fmri_temporal_filter.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step9/fmri_temporal_filter.py" \
   --func "$FUNC_INPUT" \
   --brain-mask "${FMRI_DIR}/gs_mask_func.nii.gz" \
   --tr "$TR_VALUE" \

@@ -1,12 +1,8 @@
-# phase2_fmri
+# phase2_fmri - Functional Connectivity
 
-入口脚本：
+入口：
 
-```text
-/data/bryang/project/CNS/pipeline/script/phases/phase2_fmri.sh
-```
-
-入口会读取 `phase0_init/step1_bids_standardize/trials/` 下的 REST trial。只有 4D 且 timepoints >= 2 的 trial 会进入预处理；Ref-only 或单 volume trial 会记录 skip 并继续。
+- `script/phases/phase2_fmri.sh`
 
 固定 step 顺序：
 
@@ -22,125 +18,100 @@
 10. `step10_scrubbing_mark.sh`
 11. `step11_extract_signal.sh`
 
-`step12_stepwise_diagnostics.sh` 是 step11 依赖的诊断输出，用于生成中间步骤 ROI 信号和 BBR FC 对照结果。
+内部诊断：
 
-## step1 Remove Start Images
+- `step12_stepwise_diagnostics.sh`
 
-工具：FSL `fslroi`
+## step1_remove_start_images
 
-功能：
+- 这个 step 删除 fMRI 开头的 dummy volumes（未稳定体积）。
 
-- 从 raw fMRI trial 中删除前导 volume。
-- `DUMMY_VOLUMES=10` 控制删除数量。
-- 如果原始 timepoints 不足以删除，则保留原始输入。
+工具：
 
-## step2 Slice Timing
+- FSL `fslroi`
 
-工具：Python、NiBabel、NumPy、SciPy
+## step2_slice_timing
 
-功能：
+- 这个 step 按 TR（重复时间，fMRI 每一帧采样间隔）决定是否执行 slice timing（层间采样时序校正）。
 
-- 根据 JSON 读取 TR。
-- 如果 `FUNC_REQUIRE_JSON_TR=1`，`RepetitionTime` 缺失会直接报错，不使用 `DEFAULT_FUNC_TR` fallback。
-- `TR > FMRI_SLICE_TIMING_TR_THRESHOLD` 时执行 slice timing。
-- 默认阈值 `FMRI_SLICE_TIMING_TR_THRESHOLD=1.0`。
-- 未达到阈值时直接复制输入为输出。
+工具：
 
-## step3 Distortion Correction
+- Python、NiBabel、SciPy
 
-工具：FSL `topup`、`applytopup`
+## step3_distortion_correction
 
-功能：
+- 这个 step 在满足条件时执行 topup / applytopup（利用反向相位编码做畸变校正），否则直接透传。
 
-- 当 `FMRI_DO_TOPUP=1` 且主 fMRI 与 reference PE 方向相反时执行 topup。
-- 不满足条件时直接复制输入为 `func_topup.nii.gz`。
+工具：
 
-## step4 Motion Correction
+- FSL `topup`、`applytopup`
 
-工具：FSL `mcflirt`、`fslmaths`
+## step4_motion_correction
 
-功能：
+- 这个 step 做刚体头动校正，并生成 mean image 和运动质量控制图。
 
-- 对 `func_topup.nii.gz` 做刚体头动校正。
-- 输出 `func_mc.nii.gz`、`func_mc.par`、`func_mean.nii.gz`。
-- 同时输出 motion PNG 和 FD TSV 到 `phase2_fmri/visualization/<trial>/motion/`。
+工具：
 
-## step5 BBR
+- FSL `mcflirt`
+- FSL `fslmaths`
 
-工具：FSL `flirt`、`fslmaths`
+## step5_bbr
 
-功能：
+- 这个 step 用 BBR（Boundary-Based Registration，基于灰白质边界的配准）把 fMRI 对齐到 T1，并把 atlas（分区模板）与掩膜投到 func（功能像）空间。
 
-- 将 `func_mean` 配准到 native T1。
-- 生成 `bbr.mat` 和 `t1_to_func.mat`。
-- 将 88 ROI atlas、global mask、WM mask、CSF mask 投到 func 空间。
-- 输出 BBR 可视化到 `phase2_fmri/visualization/<trial>/bbr/`，其中 atlas 和 subcortex overlay 分子目录保存。
-- subcortex overlay 每个 ROI 只输出实际包含该 ROI 的 z 切片，避免无目标脑区的空白切片污染检查。
+工具：
 
-## step6 Spatially Smooth
+- FSL `epi_reg`
+- FSL `flirt`
+- FSL `convert_xfm`
+- FSL `fslmaths`
+- Python `visualize_registration_overlay.py`
 
-工具：FSL `fslmaths`
+## step6_spatially_smooth
 
-功能：
+- 这个 step 按配置对 fMRI 做空间平滑。
 
-- `FMRI_SMOOTH_FWHM_MM=0` 时不实际平滑，只复制输入。
-- 非 0 时按 FWHM 转 sigma 后执行平滑。
+工具：
 
-## step7 Temporally Detrend
+- FSL `fslmaths`
 
-工具：Python utils
+## step7_temporally_detrend
 
-功能：
+- 这个 step 对 fMRI 时间序列做去趋势。
 
-- 对 `func_smooth.nii.gz` 去趋势。
-- `FMRI_DETREND_ORDER=1` 控制去趋势阶数。
-- 输出 detrend QC JSON。
+工具：
 
-## step8 Regress Out Covariates
+- Python utils
 
-工具：Python utils
+## step8_regress_out_covariates
 
-功能：
+- 这个 step 回归 WM、CSF 和 head motion（头动参数），并可选回归 global signal（全局信号）。
 
-- 对 `func_detrend.nii.gz` 做协变量回归。
-- 默认回归 WM、CSF、head motion。
-- 默认不回归 global signal。
+工具：
 
-关键 config：
+- Python utils
 
-- `FMRI_REGRESS_GS=0`
-- `FMRI_REGRESS_WM=1`
-- `FMRI_REGRESS_CSF=1`
-- `FMRI_REGRESS_HM=1`
-- `FMRI_HM_MODEL=24`
+## step9_temporally_filter
 
-## step9 Temporally Filter
+- 这个 step 对 fMRI 时间序列做带通滤波。
 
-工具：Python utils
+工具：
 
-功能：
+- Python utils
 
-- 对 `func_regress.nii.gz` 做带通滤波。
-- 默认 `FMRI_LOW_CUT_HZ=0.01`，`FMRI_HIGH_CUT_HZ=0.10`。
-- TR 来源同 step2：优先读取 trial `func.json` 的 `RepetitionTime`；`FUNC_REQUIRE_JSON_TR=1` 时不允许 fallback。
+## step10_scrubbing_mark
 
-## step10 Scrubbing
+- 这个 step 计算 FD（Framewise Displacement，逐帧位移）并标记坏帧。
 
-工具：Python utils
+工具：
 
-功能：
+- Python utils
 
-- 从 `func_mc.par` 计算 FD。
-- 输出 scrub mask 和 QC。
-- 默认 `FMRI_ENABLE_SCRUBBING=0`，因此只记录标记，不删除帧。
-- 默认 `FMRI_FD_THRESHOLD=0.5`。
+## step11_extract_signal
 
-## step11 Extract Signal
+- 这个 step 从 88 ROI atlas 中提取时间序列并计算 Pearson / Fisher-z FC（功能连接）矩阵。
 
-工具：Python utils
+工具：
 
-功能：
-
-- 从 `func_filter.nii.gz` 和 `atlas_in_func.nii.gz` 提取 88 ROI timeseries。
-- 输出 Pearson FC、Fisher-z FC、timeseries、QC。
-- 触发 stepwise diagnostics，输出各中间步骤的 ROI 信号与 step5 BBR FC。
+- Python `fmri_extract_signal.py`
+- Python `step12_stepwise_diagnostics.sh` 内部工具链

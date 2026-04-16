@@ -40,7 +40,7 @@ if [[ -f "$FC_R" && -f "$FC_Z" && -f "$FC_TS" && -f "$FC_QC" && -f "${FMRI_DIR}/
 fi
 
 # 使用 NiftiLabelsMasker 从最终滤波后的 4D 数据中提取 ROI 时序，并计算 FC 矩阵。
-"$PYTHON_BIN" "${UTILS_DIR}/fmri_extract_signal.py" \
+"$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step11/fmri_extract_signal.py" \
   --func "$FUNC_FILTER" \
   --atlas "${FMRI_DIR}/atlas_in_func.nii.gz" \
   --labels "$LABELS_TSV" \

@@ -16,14 +16,19 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
 import nibabel as nib
 import numpy as np
 
-from fmri_scrubbing import build_toxic_mask
-from fmri_utils import load_motion, power_fd
-from plot_motion_metrics import main as _unused  # noqa: F401
+UTILS_ROOT = Path(__file__).resolve().parents[2]
+if str(UTILS_ROOT) not in sys.path:
+    sys.path.insert(0, str(UTILS_ROOT))
+
+from phase2_fmri.shared.fmri_utils import load_motion, power_fd
+from phase2_fmri.step10.fmri_scrubbing import build_toxic_mask
+from phase2_fmri.step4.plot_motion_metrics import main as _unused  # noqa: F401
 
 import matplotlib
 
@@ -154,6 +159,7 @@ def update_trial(trial_dir: Path, cfg):
     trial_name = trial_dir.name
     phase2_dir = trial_dir.parent
     phases_root = phase2_dir.parent
+    subject_work_root = trial_dir.parents[5]
     motion_path = trial_dir / "func_mc.par"
     func_filter = trial_dir / "func_filter.nii.gz"
     brain_mask = trial_dir / "gs_mask_func.nii.gz"
@@ -169,7 +175,7 @@ def update_trial(trial_dir: Path, cfg):
     motion = load_motion(str(motion_path), n_tp)
     fd = power_fd(motion)
 
-    motion_vis_dir = phase2_dir / "visualization" / trial_name / "motion"
+    motion_vis_dir = subject_work_root / "visualization" / "phase2_fmri" / trial_name / "motion"
     motion_png = motion_vis_dir / "motion_metrics.png"
     motion_fd = motion_vis_dir / "framewise_displacement.tsv"
     draw_motion_plot(motion, fd, motion_png, fd_threshold)

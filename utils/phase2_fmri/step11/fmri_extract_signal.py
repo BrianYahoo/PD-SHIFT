@@ -7,6 +7,7 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import nibabel as nib
@@ -14,7 +15,11 @@ import numpy as np
 import pandas as pd
 from nilearn.maskers import NiftiLabelsMasker
 
-from fmri_utils import load_labels
+UTILS_ROOT = Path(__file__).resolve().parents[2]
+if str(UTILS_ROOT) not in sys.path:
+    sys.path.insert(0, str(UTILS_ROOT))
+
+from phase2_fmri.shared.fmri_utils import load_labels
 
 
 def parse_args():

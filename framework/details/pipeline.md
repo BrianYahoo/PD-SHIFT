@@ -1,84 +1,114 @@
-# CNS MRI Pipeline Details
+# CNS Lab MRI Pipeline Details
 
-本层记录当前代码实际读写的主要路径。
+本层按当前代码真实路径记录目录树、phase 路径和关键文件命名，可直接对照代码复刻。
 
-## Raw Roots
+## Code And Config Entry Points
+
+```text
+/data/bryang/project/CNS/pipeline/script/process.sh
+/data/bryang/project/CNS/pipeline/script/parallel.sh
+/data/bryang/project/CNS/pipeline/script/run/*.sh
+/data/bryang/project/CNS/pipeline/script/common.sh
+/data/bryang/project/CNS/pipeline/config/pipeline.env
+/data/bryang/project/CNS/pipeline/config/datasets/hcp.env
+/data/bryang/project/CNS/pipeline/config/datasets/parkinson.env
+```
+
+## Dataset Roots
 
 HCP:
 
 ```text
-/data/bryang/project/CNS/data/HCP/raw
+RAW_ROOT=/data/bryang/project/CNS/data/HCP/raw
+WORKSPACE_ROOT=/data/bryang/project/CNS/data/HCP/workspace
 ```
 
 Parkinson:
 
 ```text
-/data/bryang/project/CNS/data/Parkinson/raw
+RAW_ROOT=/data/bryang/project/CNS/data/Parkinson/raw
+WORKSPACE_ROOT=/data/bryang/project/CNS/data/Parkinson/workspace
 ```
 
-## Workspace Roots
+## Subject Workspace Formula
 
-HCP:
+记号：
 
 ```text
-/data/bryang/project/CNS/data/HCP/workspace/<FreeSurfer|FastSurfer>/<subject>/
+SURFER_LABEL=<FreeSurfer|FastSurfer>
+SUBJECT_KEY=<001|100610|...>
+SUBJECT_ID=sub-<SUBJECT_KEY>
 ```
 
-Parkinson:
+subject 根目录：
 
 ```text
-/data/bryang/project/CNS/data/Parkinson/workspace/<FreeSurfer|FastSurfer>/<subject>/
+SUBJECT_WORK_ROOT=/data/bryang/project/CNS/data/<HCP|Parkinson>/workspace/<FreeSurfer|FastSurfer>/<SUBJECT_KEY>
 ```
 
-## Subject Tree
-
-每个 subject 的当前标准目录：
+标准子树：
 
 ```text
-bids/sub-xxx/anat/
-bids/sub-xxx/func/
-bids/sub-xxx/dwi/
-derivatives/cns-pipeline/sub-xxx/phases/phase0_init/
-derivatives/cns-pipeline/sub-xxx/phases/phase1_anat/
-derivatives/cns-pipeline/sub-xxx/phases/phase2_fmri/
-derivatives/cns-pipeline/sub-xxx/phases/phase3_dwi/
-derivatives/cns-pipeline/sub-xxx/phases/phase4_summary/
+${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}/anat
+${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}/func
+${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}/dwi
+${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase0_init
+${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase1_anat
+${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase2_fmri
+${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase3_dwi
+${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase4_summary
+${SUBJECT_WORK_ROOT}/visualization/phase0_init
+${SUBJECT_WORK_ROOT}/visualization/phase1_anat
+${SUBJECT_WORK_ROOT}/visualization/phase2_fmri
+${SUBJECT_WORK_ROOT}/visualization/phase3_dwi
 ```
 
-## Config-Driven Dataset Behavior
+## Visualization Layout
 
-HCP 当前配置：
+当前真实实现中，所有 visualization 和 stepview 都在 subject 根目录下：
 
 ```text
-DATASET_IMPORT_MODE=hcp_nifti
-INIT_T1_RESAMPLE_ENABLE=0
-INIT_T1_RESAMPLE_VOXEL_SIZE=1
-PHASE1_BRAIN_EXTRACT_METHOD=bet
-DEFAULT_FUNC_TR=0.72
-FUNC_REQUIRE_JSON_TR=0
-PHASE1_SURFER_HIRES=0
-PHASE1_FASTSURFER_VOX_SIZE=min
-FASTSURFER_USE_CUDA=0
+${SUBJECT_WORK_ROOT}/visualization/phase0_init/stepview
+${SUBJECT_WORK_ROOT}/visualization/phase1_anat/stepview
+${SUBJECT_WORK_ROOT}/visualization/phase1_anat/t1
+${SUBJECT_WORK_ROOT}/visualization/phase1_anat/t2
+${SUBJECT_WORK_ROOT}/visualization/phase2_fmri/<trial_name>/motion
+${SUBJECT_WORK_ROOT}/visualization/phase2_fmri/<trial_name>/bbr
+${SUBJECT_WORK_ROOT}/visualization/phase2_fmri/<trial_name>/stepview
+${SUBJECT_WORK_ROOT}/visualization/phase3_dwi/registration
+${SUBJECT_WORK_ROOT}/visualization/phase3_dwi/stepview
+${SUBJECT_WORK_ROOT}/visualization/phase3_dwi/compare_radial.png
 ```
 
-Parkinson 当前配置：
+兼容逻辑：
+
+- `common.sh` 会把旧的 phase 内 `visualization/` 和 `stepview/` 自动迁到上述位置。
+- 旧路径保留为 symlink，因此旧脚本仍可访问，但真实产物根目录以 subject 根下 `visualization/` 为准。
+
+## Phase Root Variables
+
+当前 `common.sh` 中的核心目录变量：
 
 ```text
-DATASET_IMPORT_MODE=parkinson_dicom
-INIT_T1_RESAMPLE_ENABLE=1
-INIT_T1_RESAMPLE_VOXEL_SIZE=0.7
-PHASE1_BRAIN_EXTRACT_METHOD=synthstrip
-FUNC_REQUIRE_JSON_TR=1
-PHASE1_SURFER_HIRES=1
-PHASE1_FREESURFER_NO_V8=1
-PHASE1_FREESURFER_CORTEX_LABEL_ARGS=--no-fix-ga
-PHASE1_FASTSURFER_LABEL_CORTEX_ARGS=--no-fix-ga --hip-amyg
-PHASE1_FASTSURFER_VOX_SIZE=0.7
-FASTSURFER_USE_CUDA=1
-FASTSURFER_CUDA_AUTO_ASSIGN=1
-FASTSURFER_CUDA_DEVICES=0,1,2,3,4,5,6,7
-FASTSURFER_CUDA_SELECTION=least_memory
-FASTSURFER_CUDA_MAX_SELECTED_DEVICES=5
+PHASE0_INIT_DIR=${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase0_init
+PHASE0_INIT_STEP1_DIR=${PHASE0_INIT_DIR}/step1_bids_standardize
+
+PHASE1_ANAT_DIR=${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase1_anat
+PHASE1_ANAT_STEP1_DIR=${PHASE1_ANAT_DIR}/step1_brain_extract
+PHASE1_ANAT_STEP2_DIR=${PHASE1_ANAT_DIR}/step2_surfer_recon
+PHASE1_ANAT_STEP3_DIR=${PHASE1_ANAT_DIR}/step3_subcortical_syn
+PHASE1_ANAT_STEP4_DIR=${PHASE1_ANAT_DIR}/step4_warpdrive_review
+PHASE1_ANAT_STEP5_DIR=${PHASE1_ANAT_DIR}/step5_save_inverse_warp
+PHASE1_ANAT_STEP6_DIR=${PHASE1_ANAT_DIR}/step6_distal_inverse_fusion
+ATLAS_DIR=${PHASE1_ANAT_DIR}/atlas
+
+PHASE2_FMRI_DIR=${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase2_fmri
+PHASE3_DWI_DIR=${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase3_dwi
+
+PHASE4_SUMMARY_DIR=${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}/phases/phase4_summary
+FINAL_DIR=${PHASE4_SUMMARY_DIR}/final
+REPORTS_DIR=${PHASE4_SUMMARY_DIR}/reports
+COMPARE_DIR=${PHASE4_SUMMARY_DIR}/comparison
 ```
 
 ## Logs
@@ -89,16 +119,42 @@ FASTSURFER_CUDA_MAX_SELECTED_DEVICES=5
 /data/bryang/project/CNS/pipeline/logs/parallel/<dataset>/<FreeSurfer|FastSurfer>/<subject>.log
 ```
 
-issue 相关日志：
+issues 日志：
 
 ```text
 /data/bryang/project/CNS/pipeline/issues/log/
 ```
 
+## Dataset-Relevant Config Keys
+
+当前和数据集最相关的关键参数：
+
+```text
+DATASET_IMPORT_MODE
+INIT_T1_RESAMPLE_ENABLE
+INIT_T1_RESAMPLE_VOXEL_SIZE
+INIT_T2_ENABLE
+INIT_T2_SOURCE_PATTERNS
+PHASE1_BRAIN_EXTRACT_METHOD
+PHASE1_T2_COREG_ENABLE
+PHASE1_T2_SURFER_ENABLE
+PHASE1_T2_MULTICHANNEL_REG_ENABLE
+PHASE1_SUBCORTICAL_MASK_ENABLE
+PHASE1_REG_AFFINE_ENABLE
+PHASE1_FREESURFER_NO_V8
+PHASE1_FASTSURFER_VOX_SIZE
+FASTSURFER_USE_CUDA
+FASTSURFER_CUDA_AUTO_ASSIGN
+FASTSURFER_CUDA_SELECTION
+FASTSURFER_CUDA_MAX_SELECTED_DEVICES
+MNI_T2
+MNI_SUBCORTICAL_MASK
+```
+
 ## Phase Documents
 
-1. [phase0_init](./phases/phase0_init.md)
-2. [phase1_anat](./phases/phase1_anat.md)
-3. [phase2_fmri](./phases/phase2_fmri.md)
-4. [phase3_dwi](./phases/phase3_dwi.md)
-5. [phase4_summary](./phases/phase4_summary.md)
+- [phase0_init](./phases/phase0_init.md)
+- [phase1_anat](./phases/phase1_anat.md)
+- [phase2_fmri](./phases/phase2_fmri.md)
+- [phase3_dwi](./phases/phase3_dwi.md)
+- [phase4_summary](./phases/phase4_summary.md)

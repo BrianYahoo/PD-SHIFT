@@ -17,8 +17,10 @@ FC_R="${FINAL_DIR}/${SUBJECT_ID}_FC_pearson.csv"
 FC_Z="${FINAL_DIR}/${SUBJECT_ID}_FC_fisherz.csv"
 FMRI_TRIALS_TSV="${FINAL_DIR}/func/fmri_trials.tsv"
 FMRI_TRIALS_QC_JSON="${REPORTS_DIR}/fmri_trials_qc.json"
-SC_SIFT2="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_sift2.csv"
-SC_COUNT="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_count.csv"
+SC_SIFT2="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2.csv"
+SC_SIFT2_INVNODEVOL="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2_invnodevol.csv"
+SC_COUNT="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count.csv"
+SC_COUNT_INVNODEVOL="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count_invnodevol.csv"
 TVP_MODEL_DIR="${FINAL_DIR}/modeling/tvp"
 SUMMARY_MD="${REPORTS_DIR}/phase4_summary.md"
 SUMMARY_MANIFEST="${REPORTS_DIR}/manifest.tsv"
@@ -40,8 +42,10 @@ cat > "${SUMMARY_MD}" <<EOF
 - FC Pearson: ${FINAL_DIR}/${SUBJECT_ID}_FC_pearson.csv
 - FC Fisher-z: ${FINAL_DIR}/${SUBJECT_ID}_FC_fisherz.csv
 - fMRI Trial Table: ${FMRI_TRIALS_TSV}
-- SC SIFT2: ${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2.csv
-- SC Count: ${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count.csv
+- SC SIFT2: ${SC_SIFT2}
+- SC SIFT2 InvNodeVol: ${SC_SIFT2_INVNODEVOL}
+- SC Count: ${SC_COUNT}
+- SC Count InvNodeVol: ${SC_COUNT_INVNODEVOL}
 - TVP Modeling Inputs: ${TVP_MODEL_DIR}
 
 ## Reports
@@ -60,7 +64,9 @@ fc_pearson	${FC_R}
 fc_fisherz	${FC_Z}
 fmri_trials	${FMRI_TRIALS_TSV}
 sc_sift2	${SC_SIFT2}
+sc_sift2_invnodevol	${SC_SIFT2_INVNODEVOL}
 sc_count	${SC_COUNT}
+sc_count_invnodevol	${SC_COUNT_INVNODEVOL}
 tvp_model_dir	${TVP_MODEL_DIR}
 comparison_dir	${COMPARE_DIR}
 summary_report	${SUMMARY_MD}

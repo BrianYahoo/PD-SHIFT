@@ -7,6 +7,7 @@
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -15,7 +16,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from fmri_utils import load_motion, power_fd
+UTILS_ROOT = Path(__file__).resolve().parents[2]
+if str(UTILS_ROOT) not in sys.path:
+    sys.path.insert(0, str(UTILS_ROOT))
+
+from phase2_fmri.shared.fmri_utils import load_motion, power_fd
 
 
 def parse_args():

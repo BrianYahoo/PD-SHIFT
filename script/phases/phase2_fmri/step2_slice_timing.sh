@@ -72,7 +72,7 @@ import sys
 sys.exit(0 if float(sys.argv[1]) > float(sys.argv[2]) else 1)
 PY
 then
-  "$PYTHON_BIN" "${UTILS_DIR}/fmri_slice_timing.py" \
+  "$PYTHON_BIN" "${UTILS_DIR}/phase2_fmri/step2/fmri_slice_timing.py" \
     --input "$FUNC_INPUT" \
     --json "$FMRI_FUNC_JSON" \
     --output "$FUNC_STC"

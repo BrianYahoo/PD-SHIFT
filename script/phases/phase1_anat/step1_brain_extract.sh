@@ -19,6 +19,7 @@ fi
 # 检查当前 step 依赖的核心命令。
 require_cmd N4BiasFieldCorrection
 require_cmd fslmaths
+require_cmd flirt
 case "${BRAIN_EXTRACT_METHOD}" in
   synthstrip)
     require_cmd mri_synthstrip
@@ -35,7 +36,9 @@ esac
 
 # 定义当前 step 的核心输入输出。
 STEP1_MANIFEST="${PHASE1_ANAT_STEP1_DIR}/manifest.tsv"
+PHASE0_STEP1_MANIFEST="${PHASE0_INIT_STEP1_DIR}/manifest.tsv"
 T1_INPUT="${PHASE0_INIT_STEP1_DIR}/t1.nii.gz"
+T2_INPUT="${PHASE0_INIT_STEP1_DIR}/t2.nii.gz"
 T1_N4="${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz"
 T1_BIASFIELD="${PHASE1_ANAT_STEP1_DIR}/t1_biasfield.nii.gz"
 T1_ORI_STALE="${PHASE1_ANAT_STEP1_DIR}/t1_ori.nii.gz"
@@ -43,6 +46,17 @@ T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz"
 T1_MASK="${PHASE1_ANAT_STEP1_DIR}/t1_brain_mask.nii.gz"
 T1_FS_XMASK="${PHASE1_ANAT_STEP1_DIR}/t1_freesurfer_xmask.nii.gz"
 T1_FS_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_freesurfer_brain.nii.gz"
+T2_N4="${PHASE1_ANAT_STEP1_DIR}/t2_n4.nii.gz"
+T2_BIASFIELD="${PHASE1_ANAT_STEP1_DIR}/t2_biasfield.nii.gz"
+T2_TO_T1_MAT="${PHASE1_ANAT_STEP1_DIR}/t2_to_t1.mat"
+T2_COREG_T1="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz"
+T2_COREG_T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
+T2_ENABLED="${PHASE1_T2_COREG_ENABLE:-${INIT_T2_ENABLE:-0}}"
+T2_AVAILABLE="$(read_manifest_value "${PHASE0_STEP1_MANIFEST}" "t2_available")"
+T2_USE_CURRENT="0"
+if [[ "${T2_ENABLED}" == "1" && "${T2_AVAILABLE}" == "1" && -f "${T2_INPUT}" ]]; then
+  T2_USE_CURRENT="1"
+fi
 
 images_share_grid() {
   local ref_path="$1"
@@ -61,12 +75,35 @@ PY
 }
 
 step1_outputs_ready() {
+  local manifest_t2_enabled=""
+  local manifest_t2_available=""
   [[ -f "${STEP1_MANIFEST}" && -f "${T1_N4}" && -f "${T1_BRAIN}" && -f "${T1_MASK}" && -f "${T1_FS_XMASK}" && -f "${T1_FS_BRAIN}" ]] || return 1
   images_share_grid "${T1_INPUT}" "${T1_N4}" || return 1
   images_share_grid "${T1_N4}" "${T1_BRAIN}" || return 1
   images_share_grid "${T1_N4}" "${T1_MASK}" || return 1
   images_share_grid "${T1_N4}" "${T1_FS_XMASK}" || return 1
   images_share_grid "${T1_N4}" "${T1_FS_BRAIN}" || return 1
+
+  manifest_t2_enabled="$(read_manifest_value "${STEP1_MANIFEST}" "t2_enabled")"
+  manifest_t2_available="$(read_manifest_value "${STEP1_MANIFEST}" "t2_available")"
+  [[ "${manifest_t2_enabled:-0}" == "${T2_ENABLED:-0}" ]] || return 1
+  [[ "${manifest_t2_available:-0}" == "${T2_USE_CURRENT:-0}" ]] || return 1
+
+  if [[ "${T2_USE_CURRENT}" == "1" ]]; then
+    [[ -f "${T2_N4}" && -f "${T2_TO_T1_MAT}" && -f "${T2_COREG_T1}" && -f "${T2_COREG_T1_BRAIN}" ]] || return 1
+    images_share_grid "${T2_INPUT}" "${T2_N4}" || return 1
+    images_share_grid "${T1_N4}" "${T2_COREG_T1}" || return 1
+    images_share_grid "${T1_N4}" "${T2_COREG_T1_BRAIN}" || return 1
+  fi
+}
+
+reset_t2_outputs() {
+  rm -f "${T2_N4}" \
+    "${T2_BIASFIELD}" \
+    "${T2_TO_T1_MAT}" \
+    "${T2_COREG_T1}" \
+    "${T2_COREG_T1_BRAIN}" \
+    "${STEP1_MANIFEST}"
 }
 
 # 输出当前 step 的开始日志。
@@ -84,6 +121,28 @@ if [[ -f "${T1_N4}" ]] && ! images_share_grid "${T1_INPUT}" "${T1_N4}"; then
     "${T1_FS_XMASK}" \
     "${T1_FS_BRAIN}" \
     "${STEP1_MANIFEST}"
+  reset_t2_outputs
+fi
+
+if [[ "${T2_USE_CURRENT}" == "1" ]]; then
+  if [[ -f "${T2_N4}" ]] && ! images_share_grid "${T2_INPUT}" "${T2_N4}"; then
+    reset_t2_outputs
+  fi
+else
+  if [[ -f "${T2_N4}" || -f "${T2_TO_T1_MAT}" || -f "${T2_COREG_T1}" || -f "${T2_COREG_T1_BRAIN}" ]]; then
+    reset_t2_outputs
+  fi
+fi
+
+if [[ -f "${STEP1_MANIFEST}" ]]; then
+  manifest_t2_enabled="$(read_manifest_value "${STEP1_MANIFEST}" "t2_enabled")"
+  manifest_t2_available="$(read_manifest_value "${STEP1_MANIFEST}" "t2_available")"
+  manifest_t2_input="$(read_manifest_value "${STEP1_MANIFEST}" "t2_input")"
+  if [[ "${manifest_t2_enabled:-0}" != "${T2_ENABLED:-0}" || "${manifest_t2_available:-0}" != "${T2_USE_CURRENT:-0}" ]]; then
+    reset_t2_outputs
+  elif [[ "${T2_USE_CURRENT}" == "1" && "${manifest_t2_input}" != "${T2_INPUT}" ]]; then
+    reset_t2_outputs
+  fi
 fi
 
 # 如果当前 step 的主要结果都已存在，则直接跳过。
@@ -156,6 +215,18 @@ if [[ ! -f "${T1_FS_BRAIN}" ]]; then
   fslmaths "${T1_N4}" -mul "${T1_FS_XMASK}" "${T1_FS_BRAIN}"
 fi
 
+if [[ "${T2_USE_CURRENT}" == "1" ]]; then
+  if [[ ! -f "${T2_N4}" ]]; then
+    N4BiasFieldCorrection -d 3 -i "${T2_INPUT}" -o "[${T2_N4},${T2_BIASFIELD}]" >"${PHASE1_ANAT_STEP1_DIR}/t2_n4.log" 2>&1
+  fi
+  if [[ ! -f "${T2_TO_T1_MAT}" || ! -f "${T2_COREG_T1}" ]]; then
+    flirt -in "${T2_N4}" -ref "${T1_N4}" -omat "${T2_TO_T1_MAT}" -out "${T2_COREG_T1}" -dof 6 -cost normmi >"${PHASE1_ANAT_STEP1_DIR}/flirt_t2_to_t1.log" 2>&1
+  fi
+  if [[ ! -f "${T2_COREG_T1_BRAIN}" ]]; then
+    fslmaths "${T2_COREG_T1}" -mul "${T1_MASK}" "${T2_COREG_T1_BRAIN}"
+  fi
+fi
+
 # 写出当前 step 的输出清单。
 cat > "${STEP1_MANIFEST}" <<EOF
 key	value
@@ -167,6 +238,14 @@ t1_brain	${T1_BRAIN}
 t1_mask	${T1_MASK}
 t1_freesurfer_xmask	${T1_FS_XMASK}
 t1_freesurfer_brain	${T1_FS_BRAIN}
+t2_enabled	${T2_ENABLED}
+t2_available	${T2_USE_CURRENT}
+t2_input	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_INPUT}" || echo "" )
+t2_n4	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_N4}" || echo "" )
+t2_biasfield	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_BIASFIELD}" || echo "" )
+t2_to_t1_mat	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_TO_T1_MAT}" || echo "" )
+t2_coreg_t1	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_COREG_T1}" || echo "" )
+t2_coreg_t1_brain	$( [[ "${T2_USE_CURRENT}" == "1" ]] && echo "${T2_COREG_T1_BRAIN}" || echo "" )
 brain_extract_method	${BRAIN_EXTRACT_METHOD}
 original_input_zooms_mm	${ORIGINAL_INPUT_ZOOMS_MM}
 freesurfer_xmask_dilations	${PHASE1_FS_XMASK_DILATIONS:-2}
@@ -178,3 +257,8 @@ link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 2 "t1_brain" "${T1_BRAI
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 3 "t1_brain_mask" "${T1_MASK}"
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 4 "t1_freesurfer_xmask" "${T1_FS_XMASK}"
 link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 5 "t1_freesurfer_brain" "${T1_FS_BRAIN}"
+if [[ "${T2_USE_CURRENT}" == "1" ]]; then
+  link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 6 "t2_n4" "${T2_N4}"
+  link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 7 "t2_coreg_t1" "${T2_COREG_T1}"
+  link_phase_product_nifti "${PHASE1_ANAT_STEPVIEW_DIR}" 1 8 "t2_coreg_t1_brain" "${T2_COREG_T1_BRAIN}"
+fi

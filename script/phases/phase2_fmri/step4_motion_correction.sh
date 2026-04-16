@@ -22,7 +22,7 @@ require_cmd "$PYTHON_BIN"
 FUNC_INPUT="${FMRI_DIR}/func_topup.nii.gz"
 FUNC_MC="${FMRI_DIR}/func_mc.nii.gz"
 FUNC_MEAN="${FMRI_DIR}/func_mean.nii.gz"
-VIS_MOTION_DIR="${PHASE2_FMRI_DIR}/visualization/${FMRI_TRIAL_NAME}/motion"
+VIS_MOTION_DIR="${PHASE2_FMRI_TRIAL_VIS_DIR}/motion"
 MOTION_PNG="${VIS_MOTION_DIR}/motion_metrics.png"
 MOTION_FD="${VIS_MOTION_DIR}/framewise_displacement.tsv"
 MOTION_DONE="${VIS_MOTION_DIR}/motion_metrics.done"
@@ -56,7 +56,7 @@ fi
 
 # 可视化头动参数与 FD，便于快速判断本 trial 的头动质量。
 mkdir -p "${VIS_MOTION_DIR}"
-"${PYTHON_BIN}" "${UTILS_DIR}/plot_motion_metrics.py" \
+"${PYTHON_BIN}" "${UTILS_DIR}/phase2_fmri/step4/plot_motion_metrics.py" \
   --motion "${FMRI_DIR}/func_mc.par" \
   --fd-threshold "${FMRI_FD_THRESHOLD}" \
   --output-png "${MOTION_PNG}" \
