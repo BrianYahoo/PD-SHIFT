@@ -1,4 +1,4 @@
-# CNS MRI Pipeline
+# CNS Lab MRI Pipeline
 
 ## Phase
 
