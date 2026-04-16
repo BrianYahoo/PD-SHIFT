@@ -1,6 +1,6 @@
 # Runtime logs and batch outputs
 /logs/
-/issues/log/
+/issues/
 *.log
 *.out
 *.err
@@ -8,7 +8,6 @@
 
 # Local Codex/thread handoff state, not pipeline source
 /memory.md
-/issues/prompt/
 
 # Python caches
 __pycache__/
