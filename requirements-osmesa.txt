@@ -1,5 +1,0 @@
---extra-index-url https://wheels.vtk.org
-surfplot
-brainspace
-pyvista
-vtk-osmesa
