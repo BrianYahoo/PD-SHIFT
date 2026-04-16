@@ -20,7 +20,7 @@ NATIVE_SURF_DIR="${PHASE1_ANAT_STEP7_DIR}/native"
 FSLR_MESH_K="${PHASE1_TISSUE_PROFILE_FSLR_MESH_K:-32}"
 HIGHRES_MESH_K="${PHASE1_TISSUE_PROFILE_HIGHRES_MESH_K:-164}"
 FSLR_DIR="${PHASE1_ANAT_STEP7_DIR}/fsLR${FSLR_MESH_K}k"
-PLOT_DIR="${PHASE1_ANAT_VIS_DIR}/t1t2_myelin"
+PLOT_DIR="${PHASE1_ANAT_VIS_DIR}/hierarchy"
 
 ROI_MASTER_TSV="${PIPELINE_ROOT}/framework/details/roi.tsv"
 T1_NATIVE="${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz"
@@ -173,8 +173,8 @@ copy_surface_native() {
   local very_inflated_fslr="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.very_inflated.${FSLR_MESH_K}k_fs_LR.surf.gii"
   local sulc_fslr="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.sulc.${FSLR_MESH_K}k_fs_LR.shape.gii"
 
-  mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${white_native}" >"${LOG_DIR}/${hemi}_mris_convert_white.log" 2>&1
-  mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.pial" "${pial_native}" >"${LOG_DIR}/${hemi}_mris_convert_pial.log" 2>&1
+  mris_convert --to-scanner "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${white_native}" >"${LOG_DIR}/${hemi}_mris_convert_white.log" 2>&1
+  mris_convert --to-scanner "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.pial" "${pial_native}" >"${LOG_DIR}/${hemi}_mris_convert_pial.log" 2>&1
   mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sphere" "${sphere_native}" >"${LOG_DIR}/${hemi}_mris_convert_sphere.log" 2>&1
   mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sphere.reg" "${sphere_reg_native}" >"${LOG_DIR}/${hemi}_mris_convert_sphere_reg.log" 2>&1
   mris_convert -c "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.thickness" "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${thickness_native}" >"${LOG_DIR}/${hemi}_mris_convert_thickness.log" 2>&1
