@@ -79,10 +79,20 @@ PD-SHIFT utilizes Python as the connective tissue for matrix operations and BIDS
 ```bash
 conda create -n pdshift python=3.9
 conda activate pdshift
-pip install numpy nibabel scipy matplotlib pandas seaborn nilearn surfplot brainspace pyvista
+pip install -r requirements.txt
 ```
 
-For headless surface rendering, the current pipeline also supports a separate OSMesa-based renderer environment.
+For headless surface rendering, the current pipeline also supports a separate OSMesa-based renderer environment:
+```bash
+conda create -n pdshift-osmesa python=3.10
+conda activate pdshift-osmesa
+pip install -r requirements-osmesa.txt
+```
+
+The repository therefore separates Python dependencies into:
+
+* `requirements.txt`: Main pipeline Python dependencies.
+* `requirements-osmesa.txt`: Optional headless surface-rendering stack using `vtk-osmesa`.
 
 ### 4. Atlas & Templates
 
