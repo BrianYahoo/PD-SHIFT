@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-"""把个体 T1 与最终 hybrid atlas 叠加可视化，并按 z 轴逐层输出 PNG。
+"""把个体底图与最终 hybrid atlas 叠加可视化，并按 z 轴逐层输出 PNG。
 
 这个脚本用于 phase1_anat/step6 之后的人工快速核对。
 输出分两部分：
-1. atlas 总览：灰度 T1 + 半透明全 atlas 叠加。
+1. atlas 总览：灰度底图 + 半透明全 atlas 叠加。
 2. subcortex 细看：按 10 类皮层下脑区分别输出，仅对该脑区的左右半球做高对比度高亮，
    其余脑区保持较淡颜色，方便观察边界与覆盖情况。
 """
@@ -41,7 +41,7 @@ RIGHT_HIGHLIGHT = np.array([0.92, 0.28, 0.20], dtype=np.float32)
 def parse_args():
     """解析命令行参数。"""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--t1", required=True)
+    parser.add_argument("--base", required=True)
     parser.add_argument("--atlas", required=True)
     parser.add_argument("--labels-tsv", required=True)
     parser.add_argument("--atlas-out-dir", required=True)
@@ -50,7 +50,7 @@ def parse_args():
 
 
 def normalize_base(slice2d: np.ndarray) -> np.ndarray:
-    """把 T1 切片拉到 0-1，便于稳定显示。"""
+    """把底图切片拉到 0-1，便于稳定显示。"""
     data = slice2d.astype(np.float32)
     finite = np.isfinite(data)
     if not np.any(finite):
@@ -148,18 +148,26 @@ def main():
     atlas_out_dir.mkdir(parents=True, exist_ok=True)
     subcortex_out_dir.mkdir(parents=True, exist_ok=True)
 
-    t1_img = nib.load(args.t1)
+    base_img = nib.load(args.base)
     atlas_img = nib.load(args.atlas)
     label_map = load_label_map(Path(args.labels_tsv))
     subcortex_targets = build_subcortex_target_map(label_map)
-    if t1_img.shape != atlas_img.shape or not np.allclose(t1_img.affine, atlas_img.affine):
-        atlas_img = resample_from_to(atlas_img, t1_img, order=0)
+    if base_img.shape != atlas_img.shape or not np.allclose(base_img.affine, atlas_img.affine):
+        atlas_img = resample_from_to(atlas_img, base_img, order=0)
 
-    t1 = np.asarray(t1_img.dataobj, dtype=np.float32)
+    base_data = np.asarray(base_img.dataobj, dtype=np.float32)
     atlas = np.asarray(atlas_img.dataobj, dtype=np.int32)
 
-    for z_idx in range(t1.shape[2]):
-        base = np.rot90(normalize_base(t1[:, :, z_idx]))
+    for stale_png in atlas_out_dir.glob("z=*.png"):
+        stale_png.unlink()
+    for folder_name in subcortex_targets:
+        focus_dir = subcortex_out_dir / folder_name
+        if focus_dir.exists():
+            for stale_png in focus_dir.glob("z=*.png"):
+                stale_png.unlink()
+
+    for z_idx in range(base_data.shape[2]):
+        base = np.rot90(normalize_base(base_data[:, :, z_idx]))
         overlay = np.rot90(atlas[:, :, z_idx])
         draw_overview(base, overlay, atlas_out_dir / f"z={z_idx}.png", z_idx)
 

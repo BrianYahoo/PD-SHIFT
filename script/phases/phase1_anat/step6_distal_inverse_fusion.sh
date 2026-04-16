@@ -132,7 +132,7 @@ fi
 # 输出按 z 轴逐层的 atlas 叠加可视化，便于直接检查融合后的空间位置。
 mkdir -p "${VIS_T1_ATLAS_DIR}" "${VIS_T1_SUBCORTEX_DIR}"
 "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/visualize_hybrid_atlas_overlay.py" \
-  --t1 "${T1_NATIVE}" \
+  --base "${T1_NATIVE}" \
   --atlas "${HYBRID_ATLAS}" \
   --labels-tsv "${HYBRID_LABELS}" \
   --atlas-out-dir "${VIS_T1_ATLAS_DIR}" \
@@ -140,7 +140,7 @@ mkdir -p "${VIS_T1_ATLAS_DIR}" "${VIS_T1_SUBCORTEX_DIR}"
 if [[ "${STEP6_USE_T2_VIS}" == "1" ]]; then
   mkdir -p "${VIS_T2_ATLAS_DIR}" "${VIS_T2_SUBCORTEX_DIR}"
   "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/visualize_hybrid_atlas_overlay.py" \
-    --t1 "${T2_BRAIN}" \
+    --base "${T2_BRAIN}" \
     --atlas "${HYBRID_ATLAS}" \
     --labels-tsv "${HYBRID_LABELS}" \
     --atlas-out-dir "${VIS_T2_ATLAS_DIR}" \

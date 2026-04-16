@@ -28,19 +28,11 @@ ATLAS_LABELS="${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv"
 VIS_REG_DIR="${PHASE3_DWI_VIS_DIR}/registration"
 VIS_REG_DONE="${VIS_REG_DIR}/split_overlay.done"
 T2_IN_DWI="${DWI_DIR}/t2_in_dwi.nii.gz"
-USE_T2_REG_VIS="0"
-if [[ -f "${T2_BRAIN}" ]]; then
-  USE_T2_REG_VIS="1"
-fi
 
 dwi_visualizations_ready() {
   [[ -f "${VIS_REG_DONE}" ]] || return 1
-  compgen -G "${VIS_REG_DIR}/dwi/t1/atlas/z=*.png" > /dev/null || return 1
-  compgen -G "${VIS_REG_DIR}/dwi/t1/subcortex/AC/z=*.png" > /dev/null || return 1
-  if [[ "${USE_T2_REG_VIS}" == "1" ]]; then
-    compgen -G "${VIS_REG_DIR}/dwi/t2/atlas/z=*.png" > /dev/null || return 1
-    compgen -G "${VIS_REG_DIR}/dwi/t2/subcortex/AC/z=*.png" > /dev/null || return 1
-  fi
+  compgen -G "${VIS_REG_DIR}/dwi/atlas/z=*.png" > /dev/null || return 1
+  compgen -G "${VIS_REG_DIR}/dwi/subcortex/AC/z=*.png" > /dev/null || return 1
 }
 
 # 如果 DWI 空间下的配准和 5TT 结果已经存在，则直接跳过。
@@ -64,7 +56,7 @@ if [[ ! -f "${DWI_DIR}/atlas_in_dwi.nii.gz" ]]; then
   flirt -in "$ATLAS_T1" -ref "${DWI_DIR}/mean_b0.nii.gz" -out "${DWI_DIR}/atlas_in_dwi.nii.gz" -applyxfm -init "${DWI_DIR}/t1_to_dwi.mat" -interp nearestneighbour >"${DWI_DIR}/flirt_atlas_to_dwi.log" 2>&1
 fi
 
-if [[ "${USE_T2_REG_VIS}" == "1" && ! -f "${T2_IN_DWI}" ]]; then
+if [[ -f "${T2_BRAIN}" && ! -f "${T2_IN_DWI}" ]]; then
   flirt -in "${T2_BRAIN}" -ref "${DWI_DIR}/mean_b0.nii.gz" -out "${T2_IN_DWI}" -applyxfm -init "${DWI_DIR}/t1_to_dwi.mat" -interp trilinear >"${DWI_DIR}/flirt_t2_to_dwi.log" 2>&1
 fi
 
@@ -105,22 +97,12 @@ fi
 
 # 把图谱叠加到 DWI 的 mean_b0 上，逐层输出 PNG 便于检查结构空间配准质量。
 mkdir -p "${VIS_REG_DIR}"
+rm -rf "${VIS_REG_DIR}/dwi/t1" "${VIS_REG_DIR}/dwi/t2"
 "${PYTHON_BIN}" "${UTILS_DIR}/shared/visualization/visualize_registration_overlay.py" \
   --base "${DWI_DIR}/mean_b0.nii.gz" \
   --atlas "${DWI_DIR}/atlas_in_dwi.nii.gz" \
   --labels-tsv "${ATLAS_LABELS}" \
   --out-dir "${VIS_REG_DIR}" \
   --frame-label dwi \
-  --variant-subdir t1 \
   --split-subdirs
-if [[ "${USE_T2_REG_VIS}" == "1" && -f "${T2_IN_DWI}" ]]; then
-  "${PYTHON_BIN}" "${UTILS_DIR}/shared/visualization/visualize_registration_overlay.py" \
-    --base "${T2_IN_DWI}" \
-    --atlas "${DWI_DIR}/atlas_in_dwi.nii.gz" \
-    --labels-tsv "${ATLAS_LABELS}" \
-    --out-dir "${VIS_REG_DIR}" \
-    --frame-label dwi \
-    --variant-subdir t2 \
-    --split-subdirs
-fi
 touch "${VIS_REG_DONE}"

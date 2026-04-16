@@ -227,6 +227,10 @@ def main():
             frame_dir = frame_dir / args.variant_subdir
 
         if args.split_subdirs:
+            atlas_dir = frame_dir / "atlas"
+            if atlas_dir.exists():
+                for stale_png in atlas_dir.glob("z=*.png"):
+                    stale_png.unlink()
             for folder_name in subcortex_targets:
                 focus_dir = frame_dir / "subcortex" / folder_name
                 if focus_dir.exists():
