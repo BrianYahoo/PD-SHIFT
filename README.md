@@ -121,3 +121,11 @@ Before running, you must specify your local paths and hardware configurations.
 ## 📖 Detailed Framework Documentation
 
 For a deep dive into the mathematical decisions, bash array configurations, and execution step-views, please refer to the detailed structural breakdown in the [framework](framework/) directory.
+
+---
+## 👤 Author
+
+- **Boran Yang**
+- 🦦 **GitHub:** [@BrianYahoo](https://github.com/BrianYahoo)
+- 📧 **Email:** bryangsjtu@gmail.com
+- 🏛️ **Affiliation:** Lab of Computational Neuroscience, Institute of Natural Sciences, SJTU
