@@ -180,6 +180,8 @@ load_dataset_config() {
   # 这里统一把 dataset 级开关补成完整默认值。后续 phase 脚本只读取这些变量，
   # 不再写 dataset-specific if/else，从而把数据集差异收敛到 config。
   : "${DATASET_IMPORT_MODE:?Missing DATASET_IMPORT_MODE in dataset config}"
+  : "${DATASET_SUBJECT_KEY_MIN:=}"
+  : "${DATASET_SUBJECT_KEY_MAX:=}"
   : "${INIT_T1_RESAMPLE_ENABLE:=${INIT_T1_RESAMPLE_TO_1MM:-0}}"
   INIT_T1_RESAMPLE_TO_1MM="${INIT_T1_RESAMPLE_ENABLE}"
   : "${INIT_T1_RESAMPLE_VOXEL_SIZE:=1}"
@@ -225,8 +227,15 @@ load_dataset_config() {
 
 list_dataset_subject_dirs() {
   local dataset_type="${1:-${PIPELINE_DATASET:-${DATASET_TYPE:-}}}"
+  local subject_dir=""
+  local subject_key=""
   load_dataset_config "$dataset_type"
-  find "$RAW_ROOT" -mindepth 1 -maxdepth 1 -type d | sort
+  while IFS= read -r subject_dir; do
+    [[ -n "$subject_dir" ]] || continue
+    subject_key="$(basename "$subject_dir")"
+    subject_key_in_configured_range "$subject_key" || continue
+    printf '%s\n' "$subject_dir"
+  done < <(find "$RAW_ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
 }
 
 list_dataset_subject_keys() {
@@ -237,6 +246,33 @@ list_dataset_subject_keys() {
   done < <(list_dataset_subject_dirs "${1:-${PIPELINE_DATASET:-${DATASET_TYPE:-}}}")
 }
 
+subject_key_in_configured_range() {
+  local subject_key="${1:-}"
+  local min_key="${DATASET_SUBJECT_KEY_MIN:-}"
+  local max_key="${DATASET_SUBJECT_KEY_MAX:-}"
+  local numeric_key=""
+  local numeric_min=""
+  local numeric_max=""
+
+  [[ -n "$subject_key" ]] || return 1
+  if [[ -z "$min_key" && -z "$max_key" ]]; then
+    return 0
+  fi
+  [[ "$subject_key" =~ ^[0-9]+$ ]] || return 1
+  numeric_key=$((10#$subject_key))
+  if [[ -n "$min_key" ]]; then
+    [[ "$min_key" =~ ^[0-9]+$ ]] || die "Invalid DATASET_SUBJECT_KEY_MIN: ${min_key}"
+    numeric_min=$((10#$min_key))
+    (( numeric_key >= numeric_min )) || return 1
+  fi
+  if [[ -n "$max_key" ]]; then
+    [[ "$max_key" =~ ^[0-9]+$ ]] || die "Invalid DATASET_SUBJECT_KEY_MAX: ${max_key}"
+    numeric_max=$((10#$max_key))
+    (( numeric_key <= numeric_max )) || return 1
+  fi
+  return 0
+}
+
 resolve_subject_dir() {
   local dataset_type="${1:-${PIPELINE_DATASET:-${DATASET_TYPE:-}}}"
   local subject_value="${2:-${PIPELINE_SUBJECT:-}}"
@@ -245,6 +281,7 @@ resolve_subject_dir() {
   load_dataset_config "$dataset_type"
   subject_key="$(normalize_subject_key "$subject_value")"
   [[ -n "$subject_key" ]] || die "Missing subject"
+  subject_key_in_configured_range "$subject_key" || die "Subject out of configured range for ${DATASET_TYPE}: ${subject_value}"
 
   if [[ -d "${RAW_ROOT}/${subject_key}" ]]; then
     echo "${RAW_ROOT}/${subject_key}"
