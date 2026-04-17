@@ -272,6 +272,7 @@ load_config() {
   DATASET_WORKSPACE_ROOT="${WORKSPACE_ROOT}"
   WORKSPACE_ROOT="${DATASET_WORKSPACE_ROOT}/${SURFER_LABEL}"
   SUBJECT_WORK_ROOT="${WORKSPACE_ROOT}/${SUBJECT_KEY}"
+  # 所有可视化和 stepview 都统一放在 subject 根下，避免污染 derivatives。
   SUBJECT_VIS_ROOT="${SUBJECT_WORK_ROOT}/visualization"
   BIDS_SUBJECT_DIR="${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}"
   DERIV_ROOT="${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}"
@@ -345,47 +346,6 @@ load_config() {
     "${FINAL_DIR}" \
     "${REPORTS_DIR}" \
     "${COMPARE_DIR}"
-
-  ensure_visual_link "${PHASE0_INIT_DIR}/stepview" "${PHASE0_INIT_STEPVIEW_DIR}"
-  ensure_visual_link "${PHASE1_ANAT_DIR}/stepview" "${PHASE1_ANAT_STEPVIEW_DIR}"
-  ensure_visual_link "${PHASE1_ANAT_DIR}/visualization" "${PHASE1_ANAT_VIS_DIR}"
-  ensure_visual_link "${PHASE2_FMRI_DIR}/stepview" "${PHASE2_FMRI_STEPVIEW_DIR}"
-  ensure_visual_link "${PHASE2_FMRI_DIR}/visualization" "${PHASE2_FMRI_VIS_DIR}"
-  ensure_visual_link "${PHASE3_DWI_DIR}/stepview" "${PHASE3_DWI_STEPVIEW_DIR}"
-  ensure_visual_link "${PHASE3_DWI_DIR}/visualization" "${PHASE3_DWI_VIS_DIR}"
-}
-
-ensure_visual_link() {
-  local legacy_path="$1"
-  local target_path="$2"
-  local item=""
-
-  [[ -n "${legacy_path:-}" && -n "${target_path:-}" ]] || return 0
-  mkdir -p "${target_path}"
-
-  if [[ -L "${legacy_path}" ]]; then
-    ln -sfn "${target_path}" "${legacy_path}"
-    return 0
-  fi
-
-  if [[ -d "${legacy_path}" ]]; then
-    if [[ "$(cd "${legacy_path}" && pwd -P)" != "$(cd "${target_path}" && pwd -P)" ]]; then
-      (
-        shopt -s dotglob nullglob
-        for item in "${legacy_path}"/*; do
-          [[ -e "${item}" ]] || continue
-          if [[ ! -e "${target_path}/$(basename "${item}")" ]]; then
-            mv "${item}" "${target_path}/"
-          fi
-        done
-      )
-      rmdir "${legacy_path}" 2>/dev/null || true
-    fi
-  fi
-
-  if [[ ! -e "${legacy_path}" ]]; then
-    ln -sfn "${target_path}" "${legacy_path}"
-  fi
 }
 
 read_manifest_value() {
