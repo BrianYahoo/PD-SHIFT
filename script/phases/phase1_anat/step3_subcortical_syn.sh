@@ -73,6 +73,8 @@ resolve_step3_transform_outputs() {
   STEP3_INVERSE_WARP=""
   STEP3_TRANSFORM_LAYOUT=""
 
+  # antsRegistration 正常会给 affine + warp，但某些恢复场景可能只剩 composite warp。
+  # 这里统一解析成下游固定要读的三个槽位，避免 step5/step6 直接绑定某一种文件布局。
   if [[ -f "${REG_AFFINE}" && -f "${REG_WARP}" ]]; then
     STEP3_FORWARD_AFFINE="${REG_AFFINE}"
     STEP3_FORWARD_WARP="${REG_WARP}"
@@ -109,6 +111,8 @@ step3_outputs_ready() {
   local manifest_inverse_warp=""
   [[ -f "${STEP3_MANIFEST}" && -f "${MNI_BRAIN}" && -f "${DISTAL_MNI}" && -f "${DISTAL_LABELS}" && -f "${SN_MNI}" && -f "${SN_LABELS}" ]] || return 1
   resolve_step3_transform_outputs || return 1
+  # Step3 的完成判定不只看变换文件是否存在，还要确认 manifest 记录的模式
+  # 与当前 config 派生出来的模式完全一致，避免单通道/双通道或 masked/unmasked 结果串用。
   [[ -n "${STEP3_FORWARD_WARP}" && -f "${STEP3_FORWARD_WARP}" ]] || return 1
   [[ -z "${STEP3_FORWARD_AFFINE}" || -f "${STEP3_FORWARD_AFFINE}" ]] || return 1
   [[ -z "${STEP3_INVERSE_WARP}" || -f "${STEP3_INVERSE_WARP}" ]] || return 1
@@ -243,6 +247,7 @@ if ! resolve_step3_transform_outputs; then
   MASK_ARGS=()
   AFFINE_STAGE_ARGS=()
   if [[ "${STEP3_USE_MASK}" == "1" ]]; then
+    # ANTs 的 mask 按 fixed,moving 顺序传入；这里 fixed 是 native T1/T2，moving 是 MNI 模板侧。
     MASK_ARGS=(--masks "[${NATIVE_SUBCORTICAL_MASK},${MNI_SUBCORTICAL_MASK_NATIVE}]")
   fi
   if [[ "${STEP3_USE_AFFINE}" == "1" ]]; then

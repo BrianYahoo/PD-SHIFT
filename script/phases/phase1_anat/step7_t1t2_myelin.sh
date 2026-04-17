@@ -84,6 +84,8 @@ run_surface_plot() {
 
   [[ -x "${SURFACE_PLOT_PYTHON}" ]] || die "Missing surface plot python: ${SURFACE_PLOT_PYTHON}"
 
+  # osmesa 环境本身就是纯离屏渲染；mri_env 则优先走 xvfb-run，
+  # 这样同一套 plotting 脚本可以在服务器和图形环境下复用。
   if [[ "${PHASE1_SURFACE_PLOT_ENV:-osmesa}" == "osmesa" ]]; then
     "${SURFACE_PLOT_PYTHON}" "$@"
     return 0
@@ -173,6 +175,8 @@ copy_surface_native() {
   local very_inflated_fslr="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.very_inflated.${FSLR_MESH_K}k_fs_LR.surf.gii"
   local sulc_fslr="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.sulc.${FSLR_MESH_K}k_fs_LR.shape.gii"
 
+  # white/pial 要回到 scanner RAS，后面的 ribbon-constrained 体表面映射才会和 t1_n4/t2_coreg_t1 对齐。
+  # sphere/sphere.reg 仍然保留其拓扑球面坐标，不能做 to-scanner。
   mris_convert --to-scanner "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.white" "${white_native}" >"${LOG_DIR}/${hemi}_mris_convert_white.log" 2>&1
   mris_convert --to-scanner "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.pial" "${pial_native}" >"${LOG_DIR}/${hemi}_mris_convert_pial.log" 2>&1
   mris_convert "${SURFER_SUBJECT_DIR}/surf/${hemi_fs}h.sphere" "${sphere_native}" >"${LOG_DIR}/${hemi}_mris_convert_sphere.log" 2>&1
@@ -229,6 +233,8 @@ map_volume_metric() {
   local fslr_mid="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.midthickness.${FSLR_MESH_K}k_fs_LR.surf.gii"
   local fslr_metric="${FSLR_DIR}/${SUBJECT_ID}.${hemi}.${map_name}.${FSLR_MESH_K}k_fs_LR.func.gii"
 
+  # 先在 native surface 上做 ribbon 映射，再沿着 native->fsLR 的球面重采样；
+  # 这样能把体数据采样和跨被试网格标准化拆成两个稳定步骤。
   "${WB_COMMAND}" -volume-to-surface-mapping "${volume_path}" "${native_mid}" "${native_metric}" \
     -ribbon-constrained "${native_white}" "${native_pial}" >"${LOG_DIR}/${hemi}_${map_name}_map.log" 2>&1
   "${WB_COMMAND}" -set-structure "${native_metric}" "${structure}" >>"${LOG_DIR}/${hemi}_${map_name}_map.log" 2>&1
@@ -239,6 +245,8 @@ map_volume_metric() {
 }
 
 if [[ "${PHASE1_TISSUE_PROFILE_CIFTI_ENABLE:-0}" == "1" ]]; then
+  # Step7 只有在 CIFTI 开关打开时才会继续构建 fsLR metric / dscalar / surfplot PNG；
+  # 88 维 ROI CSV 和体素级 myelin volume 则始终保留。
   copy_surface_native "L" "l" "CORTEX_LEFT"
   copy_surface_native "R" "r" "CORTEX_RIGHT"
 

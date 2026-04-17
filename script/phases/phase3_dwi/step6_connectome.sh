@@ -34,7 +34,8 @@ run_connectome() {
     -symmetric -zero_diagonal -assignment_radial_search "${radial_search}" -nthreads "${NTHREADS}"
 }
 
-# 主流程默认使用配置里的 radial search，同时额外生成 4 mm 对比实验结果。
+# 主流程默认使用配置里的 radial search，同时额外生成 radial=4 的对比实验结果。
+# 每个 radial 都保留 count/sift2 与 raw/invnodevol 两个维度，因此总共是四类矩阵。
 MAIN_RADIAL_SEARCH="${CONNECTOME_ASSIGNMENT_RADIAL_SEARCH:-2}"
 COMPARE_RADIAL_SEARCH=4
 

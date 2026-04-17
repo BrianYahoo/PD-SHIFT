@@ -35,9 +35,27 @@ VIS_BBR_FIRST_FRAME="${VIS_BBR_FRAMES%%,*}"
 T2_IN_FUNC="${FMRI_DIR}/t2_in_func.nii.gz"
 
 bbr_visualizations_ready() {
+  local frame=""
+  # 完成判定必须同时满足：
+  # 1) done 标记存在；
+  # 2) 旧版 t1/t2 目录不存在；
+  # 3) 新版 atlas/subcortex PNG 在所有配置帧都补齐。
+  # 这样 split_overlay.done 就不会再和真实 PNG 状态脱钩。
   [[ -f "${VIS_BBR_DONE}" ]] || return 1
-  compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/atlas/z=*.png" > /dev/null || return 1
-  compgen -G "${VIS_BBR_DIR}/t=${VIS_BBR_FIRST_FRAME}/subcortex/AC/z=*.png" > /dev/null || return 1
+  compgen -G "${VIS_BBR_DIR}"/t=*/t1 > /dev/null && return 1
+  compgen -G "${VIS_BBR_DIR}"/t=*/t2 > /dev/null && return 1
+  IFS=',' read -r -a _frames <<< "${VIS_BBR_FRAMES}"
+  for frame in "${_frames[@]}"; do
+    compgen -G "${VIS_BBR_DIR}/t=${frame}/atlas/z=*.png" > /dev/null || return 1
+    compgen -G "${VIS_BBR_DIR}/t=${frame}/subcortex/AC/z=*.png" > /dev/null || return 1
+  done
+  return 0
+}
+
+reset_bbr_visualizations() {
+  # 只清理可视化层，不动 func/anat 的真实配准结果。
+  rm -f "${VIS_BBR_DONE}"
+  rm -rf "${VIS_BBR_DIR}"/t=*/t1 "${VIS_BBR_DIR}"/t=*/t2
 }
 
 # 回填 stepview 中的 BBR 参考像。
@@ -56,6 +74,11 @@ if [[ -f "${FMRI_DIR}/bbr.mat" && -f "${FMRI_DIR}/t1_to_func.mat" ]] \
   link_step_product_nifti 5 5 "csf_mask" "${FMRI_DIR}/csf_mask_func.nii.gz"
   log "[phase2_fmri] Step5 already done for ${SUBJECT_ID} ${FMRI_TRIAL_NAME}"
   exit 0
+fi
+
+if [[ -f "${VIS_BBR_DONE}" ]] || compgen -G "${VIS_BBR_DIR}"/t=* > /dev/null || compgen -G "${VIS_BBR_DIR}"/t=*/t1 > /dev/null || compgen -G "${VIS_BBR_DIR}"/t=*/t2 > /dev/null; then
+  # 只要检测到旧残留，就先回到“未完成”状态，强制重画，避免半新半旧目录混在一起。
+  reset_bbr_visualizations
 fi
 
 # 如果功能像到 T1 的白质分割还不存在，则先从 aparc+aseg 里提取白质标签。
@@ -140,7 +163,6 @@ link_step_product_nifti 5 5 "csf_mask" "${FMRI_DIR}/csf_mask_func.nii.gz"
 
 # 在 BBR 完成后，把图谱叠加到若干时间点的功能像上，便于检查 atlas 投影是否准确。
 mkdir -p "${VIS_BBR_DIR}"
-rm -rf "${VIS_BBR_DIR}"/t=*/t1 "${VIS_BBR_DIR}"/t=*/t2
 "${PYTHON_BIN}" "${UTILS_DIR}/shared/visualization/visualize_registration_overlay.py" \
   --base "${FMRI_DIR}/func_mc.nii.gz" \
   --atlas "${FMRI_DIR}/atlas_in_func.nii.gz" \

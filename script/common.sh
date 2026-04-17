@@ -177,6 +177,8 @@ load_dataset_config() {
     source "${CONFIG_DIR}/datasets/${DATASET_TYPE}.env"
   fi
 
+  # 这里统一把 dataset 级开关补成完整默认值。后续 phase 脚本只读取这些变量，
+  # 不再写 dataset-specific if/else，从而把数据集差异收敛到 config。
   : "${DATASET_IMPORT_MODE:?Missing DATASET_IMPORT_MODE in dataset config}"
   : "${INIT_T1_RESAMPLE_ENABLE:=${INIT_T1_RESAMPLE_TO_1MM:-0}}"
   INIT_T1_RESAMPLE_TO_1MM="${INIT_T1_RESAMPLE_ENABLE}"
@@ -272,7 +274,8 @@ load_config() {
   DATASET_WORKSPACE_ROOT="${WORKSPACE_ROOT}"
   WORKSPACE_ROOT="${DATASET_WORKSPACE_ROOT}/${SURFER_LABEL}"
   SUBJECT_WORK_ROOT="${WORKSPACE_ROOT}/${SUBJECT_KEY}"
-  # 所有可视化和 stepview 都统一放在 subject 根下，避免污染 derivatives。
+  # 所有可视化和 stepview 都统一放在 subject 根下，避免污染 derivatives，
+  # 同时让 issues 脚本可以单独清理/补画这些产物而不碰真正的数据结果。
   SUBJECT_VIS_ROOT="${SUBJECT_WORK_ROOT}/visualization"
   BIDS_SUBJECT_DIR="${SUBJECT_WORK_ROOT}/bids/${SUBJECT_ID}"
   DERIV_ROOT="${SUBJECT_WORK_ROOT}/derivatives/cns-pipeline/${SUBJECT_ID}"
@@ -534,6 +537,8 @@ write_minimal_json() {
   local out_json="$1"
   local kind="$2"
   local pe_dir="$3"
+  # 部分导入源没有可靠 sidecar，这里只负责补最小可运行 JSON，
+  # 具体是否强制从原始 metadata 读取由 dataset config 决定。
   case "$kind" in
     dwi)
       cat > "$out_json" <<EOF

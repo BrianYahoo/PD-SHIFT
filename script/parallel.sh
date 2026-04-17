@@ -88,6 +88,8 @@ cuda_candidate_devices() {
   (( ${#configured_devices[@]} > 0 )) || die "FASTSURFER_CUDA_DEVICES is empty"
   [[ "$max_devices" =~ ^[0-9]+$ ]] && (( max_devices > 0 )) || max_devices="${#configured_devices[@]}"
 
+  # least_memory 模式只在 nvidia-smi 可用时启用；
+  # 这样 HCP/Parkinson 可以共用一套调度逻辑，而不会把 GPU 依赖写死到 FastSurfer 外层脚本里。
   if [[ "${FASTSURFER_CUDA_SELECTION:-round_robin}" == "least_memory" ]] && command -v nvidia-smi >/dev/null 2>&1; then
     query_output="$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits 2>/dev/null || true)"
     if [[ -n "$query_output" ]]; then
@@ -161,6 +163,8 @@ run_one_subject() {
   (
     finalize_subject_run() {
       local exit_code=$?
+      # 用单独的 status 文件回传结果，避免子进程被信号打断或 stdout 提前结束时，
+      # 外层 parallel 只能看到“静默退出”却记不下 success/failed。
       if (( exit_code == 0 )); then
         printf '[%s] success %s %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${dataset}" "${surfer_label}" "${subject}" >>"${subject_log}"
         printf 'success\n' >"${subject_status}"
@@ -224,6 +228,7 @@ harvest_subject_result() {
 find_finished_subject_pid() {
   local pid=""
   for pid in "${ACTIVE_PIDS[@]}"; do
+    # 优先看 status 文件，其次再看 pid 是否消失，尽量避免 wait -n 返回后错配到别的 subject。
     if [[ -f "${PID_TO_STATUS_FILE[$pid]:-}" ]]; then
       echo "${pid}"
       return 0
