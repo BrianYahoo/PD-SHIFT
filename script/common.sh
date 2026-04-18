@@ -198,6 +198,7 @@ load_dataset_config() {
   : "${PHASE1_T2_SURFER_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
   : "${PHASE1_T2_MULTICHANNEL_REG_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
   : "${PHASE1_SUBCORTICAL_MASK_ENABLE:=0}"
+  : "${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:=1}"
   : "${PHASE1_TISSUE_PROFILE_ENABLE:=${PHASE1_T2_COREG_ENABLE}}"
   : "${PHASE1_TISSUE_PROFILE_CIFTI_ENABLE:=${PHASE1_TISSUE_PROFILE_ENABLE}}"
   : "${PHASE1_TISSUE_PROFILE_FSLR_MESH_K:=32}"
@@ -217,6 +218,10 @@ load_dataset_config() {
   : "${FASTSURFER_CUDA_SELECTION:=round_robin}"
   : "${FASTSURFER_CUDA_MAX_SELECTED_DEVICES:=5}"
   : "${FASTSURFER_CUDA_ENV_SCRIPT:=/data/bryang/project/CNS/tools/use_fastsurfer_cuda_env.sh}"
+  : "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:=1}"
+  : "${DWI_CONNECTOME_REPAIR_ZERO_PROTECTED_LABELS:=1}"
+  : "${DWI_CONNECTOME_ZERO_LABEL_MAX_DILATION:=12}"
+  : "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:=41,42,43,44,45,46,87,88}"
   : "${MNI_T2:=}"
   : "${MNI_SUBCORTICAL_MASK:=}"
   if [[ "${FASTSURFER_USE_CUDA}" == "1" ]]; then
@@ -348,9 +353,10 @@ load_config() {
   DWI_DIR="${PHASE3_DWI_DIR}"
 
   PHASE4_SUMMARY_DIR="${PHASES_ROOT}/phase4_summary"
+  PHASE4_SUMMARY_VIS_DIR="${SUBJECT_VIS_ROOT}/phase4_summary"
   FINAL_DIR="${PHASE4_SUMMARY_DIR}/final"
   REPORTS_DIR="${PHASE4_SUMMARY_DIR}/reports"
-  COMPARE_DIR="${PHASE4_SUMMARY_DIR}/comparison"
+  COMPARE_DIR="${PHASE4_SUMMARY_VIS_DIR}/comparison"
 
   # 兼容旧变量名，后续逐步替换为 phase 变量。
   INIT_DIR="${PHASE0_INIT_DIR}"
@@ -383,6 +389,7 @@ load_config() {
     "${PHASE3_DWI_VIS_DIR}" \
     "${PHASE3_DWI_STEPVIEW_DIR}" \
     "${PHASE4_SUMMARY_DIR}" \
+    "${PHASE4_SUMMARY_VIS_DIR}" \
     "${FINAL_DIR}" \
     "${REPORTS_DIR}" \
     "${COMPARE_DIR}"
@@ -395,13 +402,81 @@ read_manifest_value() {
   awk -F '\t' -v target="$manifest_key" '$1 == target { print $2; exit }' "$manifest_path"
 }
 
+nifti_timepoints() {
+  local nifti_path="$1"
+  local pybin="${PYTHON_BIN:-python3}"
+  [[ -f "$nifti_path" ]] || return 1
+  "$pybin" - "$nifti_path" <<'PY'
+import sys
+import nibabel as nib
+
+img = nib.load(sys.argv[1])
+shape = img.shape
+if len(shape) < 4:
+    print(1)
+else:
+    print(int(shape[3]))
+PY
+}
+
 list_fmri_trial_names() {
   local trials_root="${INIT_STEP0_DIR}/trials"
+  local trials_tsv="${INIT_STEP0_DIR}/func_trials.tsv"
   local manifest_path="${INIT_STEP0_DIR}/manifest.tsv"
   local func_source=""
+  local pybin="${PYTHON_BIN:-python3}"
+  local trial_dir=""
+  local trial_name=""
+  local trial_tp=""
+
+  if [[ -f "$trials_tsv" ]]; then
+    "$pybin" - "$trials_tsv" "$trials_root" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+import nibabel as nib
+
+trials_tsv = Path(sys.argv[1])
+trials_root = Path(sys.argv[2])
+
+rows = list(csv.DictReader(trials_tsv.open("r", encoding="utf-8"), delimiter="\t"))
+if not rows:
+    raise SystemExit(0)
+
+fieldnames = rows[0].keys()
+if "processable" in fieldnames:
+    for row in rows:
+        if str(row.get("processable", "")).strip() == "1":
+            name = str(row.get("trial_name", "")).strip()
+            if name:
+                print(name)
+    raise SystemExit(0)
+
+for row in rows:
+    name = str(row.get("trial_name", "")).strip()
+    if not name:
+        continue
+    func_path = trials_root / name / "func.nii.gz"
+    if not func_path.exists():
+        continue
+    img = nib.load(str(func_path))
+    shape = img.shape
+    timepoints = 1 if len(shape) < 4 else int(shape[3])
+    if timepoints >= 2:
+        print(name)
+PY
+    return 0
+  fi
 
   if [[ -d "$trials_root" ]]; then
-    find "$trials_root" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+    while IFS= read -r trial_dir; do
+      [[ -n "$trial_dir" ]] || continue
+      trial_name="$(basename "$trial_dir")"
+      trial_tp="$(nifti_timepoints "${trial_dir}/func.nii.gz" 2>/dev/null || true)"
+      [[ -n "$trial_tp" && "$trial_tp" -ge 2 ]] || continue
+      printf '%s\n' "$trial_name"
+    done < <(find "$trials_root" -mindepth 1 -maxdepth 1 -type d | sort)
     return 0
   fi
 

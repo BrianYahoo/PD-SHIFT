@@ -51,15 +51,14 @@ def export_one(subject_id: str, sc_type: str, matrix_path: Path, out_dir: Path, 
         raise ValueError(f"Expected 88x88 SC matrix, got {matrix.shape}: {matrix_path}")
 
     exports = {
-        "whole_brain": matrix,
-        "cortical": matrix[np.ix_(cortical, cortical)],
-        "subcortical": matrix[np.ix_(subcortical, subcortical)],
-        "subcortex_cortex": matrix[np.ix_(subcortical, cortical)],
+        "whole": (matrix, out_dir / "whole" / f"{subject_id}_DTI_connectome_{sc_type}.csv"),
+        "cortex": (matrix[np.ix_(cortical, cortical)], out_dir / "cortex" / f"{subject_id}_DTI_connectome_{sc_type}_cortical.csv"),
+        "subcortex": (matrix[np.ix_(subcortical, subcortical)], out_dir / "subcortex" / f"{subject_id}_DTI_connectome_{sc_type}_subcortical.csv"),
+        "sub2cortex": (matrix[np.ix_(subcortical, cortical)], out_dir / "sub2cortex" / f"{subject_id}_DTI_connectome_{sc_type}_subcortex_cortex.csv"),
     }
 
     row = {"sc_type": sc_type, "source": str(matrix_path)}
-    for scale, arr in exports.items():
-        out_path = out_dir / f"{subject_id}_DTI_connectome_{sc_type}_{scale}.csv"
+    for scale, (arr, out_path) in exports.items():
         save_matrix(out_path, arr)
         row[f"{scale}_path"] = str(out_path)
         row[f"{scale}_shape"] = "x".join(str(v) for v in arr.shape)
@@ -84,14 +83,14 @@ def main():
     fields = [
         "sc_type",
         "source",
-        "whole_brain_path",
-        "whole_brain_shape",
-        "cortical_path",
-        "cortical_shape",
-        "subcortical_path",
-        "subcortical_shape",
-        "subcortex_cortex_path",
-        "subcortex_cortex_shape",
+        "whole_path",
+        "whole_shape",
+        "cortex_path",
+        "cortex_shape",
+        "subcortex_path",
+        "subcortex_shape",
+        "sub2cortex_path",
+        "sub2cortex_shape",
     ]
     with manifest.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, delimiter="\t", fieldnames=fields)
@@ -103,7 +102,7 @@ def main():
         "n_cortical": len(cortical),
         "n_subcortical": len(subcortical),
         "sc_types": [row["sc_type"] for row in rows],
-        "scales": ["whole_brain", "cortical", "subcortical", "subcortex_cortex"],
+        "scales": ["whole", "cortex", "subcortex", "sub2cortex"],
         "manifest": str(manifest),
     }
     (out_dir / f"{subject_id}_DTI_connectome_typed_qc.json").write_text(

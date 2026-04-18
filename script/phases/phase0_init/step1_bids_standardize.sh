@@ -105,7 +105,57 @@ phase0_step1_outputs_ready() {
     && -f "${BIDS_SUBJECT_DIR}/dwi/${SUBJECT_ID}_dwi.json" \
     && -d "$TRIALS_ROOT" ]] || return 1
 
-  find "${BIDS_SUBJECT_DIR}/func" -maxdepth 1 -type f -name "${SUBJECT_ID}_task-rest_run-*_dir-*_bold.nii.gz" | grep -q . || return 1
+  local pybin="${PYTHON_BIN:-python3}"
+  "$pybin" - "$TRIAL_MANIFEST" "$TRIALS_ROOT" "$BIDS_SUBJECT_DIR" "$SUBJECT_ID" <<'PY' >/dev/null 2>&1 || return 1
+import csv
+import sys
+from pathlib import Path
+
+import nibabel as nib
+
+trial_tsv = Path(sys.argv[1])
+trials_root = Path(sys.argv[2])
+bids_subject_dir = Path(sys.argv[3])
+subject_id = sys.argv[4]
+
+rows = list(csv.DictReader(trial_tsv.open("r", encoding="utf-8"), delimiter="\t"))
+if not rows:
+    raise SystemExit(0)
+
+fieldnames = set(rows[0].keys())
+bold_found = False
+for row in rows:
+    trial_name = str(row.get("trial_name", "")).strip()
+    if not trial_name:
+        continue
+    func_path = trials_root / trial_name / "func.nii.gz"
+    timepoints = None
+    if func_path.exists():
+        img = nib.load(str(func_path))
+        shape = img.shape
+        timepoints = 1 if len(shape) < 4 else int(shape[3])
+
+    if "processable" not in fieldnames or "trial_kind" not in fieldnames:
+        if timepoints is not None and timepoints < 2:
+            raise SystemExit(1)
+        if timepoints is not None and timepoints >= 2:
+            bold_found = True
+        continue
+
+    processable = str(row.get("processable", "")).strip()
+    bids_bold = str(row.get("bids_bold_nii", "")).strip()
+    bids_sbref = str(row.get("bids_sbref_nii", "")).strip()
+    if processable == "1":
+        if not bids_bold or not Path(bids_bold).exists():
+            raise SystemExit(1)
+        bold_found = True
+    else:
+        if not bids_sbref or not Path(bids_sbref).exists():
+            raise SystemExit(1)
+
+if not bold_found and not any(str(row.get("processable", "")).strip() == "0" for row in rows):
+    raise SystemExit(1)
+PY
 
   local manifest_t2_enable=""
   local manifest_t2_available=""
@@ -143,23 +193,31 @@ phase0_step1_outputs_ready() {
 write_trial_manifest_header() {
   # 先写 trial 清单表头，后面每个 trial 追加一行。
   cat > "$TRIAL_MANIFEST" <<EOF
-trial_name	func_source	func_ref_source	bids_bold_nii	bids_bold_json
+trial_name	trial_kind	processable	func_source	func_ref_source	bids_bold_nii	bids_bold_json	bids_sbref_nii	bids_sbref_json
 EOF
 }
 
 append_trial_manifest_row() {
   # 把当前 trial 的来源和 BIDS 输出位置记入清单。
   local trial_name="$1"
-  local func_source="$2"
-  local func_ref_source="$3"
-  local bids_bold_nii="$4"
-  local bids_bold_json="$5"
-  printf '%s\t%s\t%s\t%s\t%s\n' \
+  local trial_kind="$2"
+  local processable="$3"
+  local func_source="$4"
+  local func_ref_source="$5"
+  local bids_bold_nii="$6"
+  local bids_bold_json="$7"
+  local bids_sbref_nii="$8"
+  local bids_sbref_json="$9"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$trial_name" \
+    "$trial_kind" \
+    "$processable" \
     "$func_source" \
     "$func_ref_source" \
     "$bids_bold_nii" \
-    "$bids_bold_json" >> "$TRIAL_MANIFEST"
+    "$bids_bold_json" \
+    "$bids_sbref_nii" \
+    "$bids_sbref_json" >> "$TRIAL_MANIFEST"
 }
 
 reset_phase0_step1_targets() {
@@ -181,6 +239,8 @@ reset_phase0_step1_targets() {
   rm -f "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.nii.gz" "${BIDS_SUBJECT_DIR}/anat/${SUBJECT_ID}_T2w.json"
   rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_bold.nii.gz"
   rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_bold.json"
+  rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_sbref.nii.gz"
+  rm -f "${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-"*_dir-*"_sbref.json"
 }
 
 series_dir_label_from_source() {
@@ -539,6 +599,8 @@ import_hcp_phase0_step1() {
   local trial_func_ref_src=""
   local trial_func_base=""
   local trial_json=""
+  local trial_kind=""
+  local processable=""
 
   hcp_root="${SUBJECT_DIR}/unprocessed/3T"
   [[ -d "$hcp_root" ]] || die "Missing HCP 3T input: $hcp_root"
@@ -649,7 +711,9 @@ import_hcp_phase0_step1() {
     bids_base="${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-${bids_run}_dir-${bids_dir}_bold"
     cp -f "${trial_dir}/func.nii.gz" "${bids_base}.nii.gz"
     cp -f "${trial_dir}/func.json" "${bids_base}.json"
-    append_trial_manifest_row "$trial_name" "$trial_func_src" "$trial_func_ref_src" "${bids_base}.nii.gz" "${bids_base}.json"
+    trial_kind="timeseries"
+    processable="1"
+    append_trial_manifest_row "$trial_name" "$trial_kind" "$processable" "$trial_func_src" "$trial_func_ref_src" "${bids_base}.nii.gz" "${bids_base}.json" "" ""
   done
 
   T1_SOURCE_RECORD="$t1_src"
@@ -678,7 +742,13 @@ import_parkinson_phase0_step1() {
   local run_idx=0
   local bids_dir=""
   local bids_base=""
+  local bids_sbref_base=""
+  local bids_sbref_nii=""
+  local bids_sbref_json=""
   local func_json=""
+  local func_timepoints=""
+  local trial_kind=""
+  local processable=""
 
   require_cmd dcm2niix
 
@@ -754,9 +824,29 @@ import_parkinson_phase0_step1() {
     func_json="${trial_dir}/func.json"
     bids_dir="$(series_dir_label_from_source "$trial_name" "$func_json")"
     bids_base="${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-${run_idx}_dir-${bids_dir}_bold"
-    cp -f "${trial_dir}/func.nii.gz" "${bids_base}.nii.gz"
-    cp -f "${trial_dir}/func.json" "${bids_base}.json"
-    append_trial_manifest_row "$trial_name" "$func_dicom_dir" "$func_ref_dicom_dir" "${bids_base}.nii.gz" "${bids_base}.json"
+    bids_sbref_base="${BIDS_SUBJECT_DIR}/func/${SUBJECT_ID}_task-rest_run-${run_idx}_dir-${bids_dir}_sbref"
+    bids_sbref_nii=""
+    bids_sbref_json=""
+    func_timepoints="$(nifti_timepoints "${trial_dir}/func.nii.gz")"
+    if [[ -n "${func_timepoints}" && "${func_timepoints}" -ge 2 ]]; then
+      trial_kind="timeseries"
+      processable="1"
+      cp -f "${trial_dir}/func.nii.gz" "${bids_base}.nii.gz"
+      cp -f "${trial_dir}/func.json" "${bids_base}.json"
+      if [[ -f "${trial_dir}/func_ref.nii.gz" ]]; then
+        cp -f "${trial_dir}/func_ref.nii.gz" "${bids_sbref_base}.nii.gz"
+        cp -f "${trial_dir}/func_ref.json" "${bids_sbref_base}.json"
+        bids_sbref_nii="${bids_sbref_base}.nii.gz"
+        bids_sbref_json="${bids_sbref_base}.json"
+      fi
+      append_trial_manifest_row "$trial_name" "$trial_kind" "$processable" "$func_dicom_dir" "$func_ref_dicom_dir" "${bids_base}.nii.gz" "${bids_base}.json" "${bids_sbref_nii}" "${bids_sbref_json}"
+    else
+      trial_kind="ref_only"
+      processable="0"
+      cp -f "${trial_dir}/func.nii.gz" "${bids_sbref_base}.nii.gz"
+      cp -f "${trial_dir}/func.json" "${bids_sbref_base}.json"
+      append_trial_manifest_row "$trial_name" "$trial_kind" "$processable" "$func_dicom_dir" "$func_ref_dicom_dir" "" "" "${bids_sbref_base}.nii.gz" "${bids_sbref_base}.json"
+    fi
   done
 
   T1_SOURCE_RECORD="$t1_dicom_dir"

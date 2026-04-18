@@ -78,9 +78,9 @@ def plot_pair(subject, reference, title, save_path):
 def sc_scale_title(scale: str):
     """把 SC 分层名称压缩成更短的标题缩写。"""
     title_map = {
-        "whole_brain": "SC WB",
-        "cortical": "SC CTX",
-        "subcortical": "SC SUB",
+        "whole": "SC WB",
+        "cortex": "SC CTX",
+        "subcortex": "SC SUB",
     }
     return title_map.get(scale, f"SC {scale}")
 
@@ -139,7 +139,7 @@ def load_sc_reference(sc_root: Path):
 
 def load_trial_bbr_fc(final_dir: Path, subject_id: str, trial_name: str):
     """读取单个 trial 的 BBR FC。"""
-    fc_path = final_dir / "func" / "fc_bbr" / f"{subject_id}_{trial_name}_step5_bbr_fc_pearson.csv"
+    fc_path = final_dir / "func" / "fc" / trial_name / "step5" / "step5_bbr_fc_pearson.csv"
     if not fc_path.exists():
         raise FileNotFoundError(fc_path)
     return load_matrix(fc_path), str(fc_path)
@@ -156,84 +156,85 @@ def main():
     sc_dir.mkdir(parents=True, exist_ok=True)
 
     labels_df = pd.read_csv(final_dir / f"{args.subject_id}_labels.tsv", sep="\t")
-    fc_bbr = load_matrix(final_dir / f"{args.subject_id}_FC_bbr_pearson.csv")
 
     tvp_labels = labels_df["label (TVP)"].astype(str).tolist()
     source_labels = labels_df["source"].astype(str).str.lower().tolist()
 
     cortical_idx = [i for i, src in enumerate(source_labels) if src == "desikan"]
-    subject_fc_full = fc_bbr
-    subject_fc_name = "BBR FC"
-
-    subject_fc_cortical = subject_fc_full[np.ix_(cortical_idx, cortical_idx)]
-    trial_names = load_trial_names(final_dir)
 
     metrics = []
     fc_reference_root = Path(args.fc_reference_root)
     subject_key = args.subject_id.removeprefix("sub-")
+    fc_bbr_path = final_dir / "func" / "fc" / "average" / "step5" / f"{args.subject_id}_FC_bbr_pearson.csv"
+    if fc_bbr_path.exists():
+        fc_bbr = load_matrix(fc_bbr_path)
+        subject_fc_full = fc_bbr
+        subject_fc_name = "BBR FC"
+        subject_fc_cortical = subject_fc_full[np.ix_(cortical_idx, cortical_idx)]
+        trial_names = load_trial_names(final_dir)
 
-    if args.dataset_type == "hcp":
-        for trial_name in trial_names:
-            trial_subject_fc_full, trial_subject_fc_path = load_trial_bbr_fc(final_dir, args.subject_id, trial_name)
-            trial_subject_fc = trial_subject_fc_full[np.ix_(cortical_idx, cortical_idx)]
-            trial_ref_fc, trial_ref_path = load_hcp_trial_fc_reference(fc_reference_root, subject_key, trial_name)
-            fc_png = fc_dir / f"{args.subject_id}_{trial_name}_fc_compare.png"
-            r, n_edges = plot_pair(trial_subject_fc, trial_ref_fc, f"FC cortical {trial_name}", fc_png)
+        if args.dataset_type == "hcp":
+            for trial_name in trial_names:
+                trial_subject_fc_full, trial_subject_fc_path = load_trial_bbr_fc(final_dir, args.subject_id, trial_name)
+                trial_subject_fc = trial_subject_fc_full[np.ix_(cortical_idx, cortical_idx)]
+                trial_ref_fc, trial_ref_path = load_hcp_trial_fc_reference(fc_reference_root, subject_key, trial_name)
+                fc_png = fc_dir / f"{args.subject_id}_{trial_name}_fc_compare.png"
+                r, n_edges = plot_pair(trial_subject_fc, trial_ref_fc, f"FC cortical {trial_name}", fc_png)
+                metrics.append(
+                    {
+                        "modality": "FC",
+                        "comparison_level": "trial",
+                        "trial_name": trial_name,
+                        "subject_fc": "BBR FC",
+                        "subject_fc_path": trial_subject_fc_path,
+                        "reference": f"HCP individual trial ({subject_key}; {trial_name})",
+                        "reference_path": trial_ref_path,
+                        "scale": "cortical",
+                        "r": r,
+                        "n_edges": n_edges,
+                        "figure": str(fc_png),
+                    }
+                )
+
+            ref_fc, ref_path = load_hcp_average_fc_reference(fc_reference_root, subject_key)
+            fc_ref_name = f"HCP individual average ({ref_path})"
+            fc_png = fc_dir / f"{args.subject_id}_fc_compare.png"
+            r, n_edges = plot_pair(subject_fc_cortical, ref_fc, "FC cortical average", fc_png)
             metrics.append(
                 {
                     "modality": "FC",
-                    "comparison_level": "trial",
-                    "trial_name": trial_name,
-                    "subject_fc": "BBR FC",
-                    "subject_fc_path": trial_subject_fc_path,
-                    "reference": f"HCP individual trial ({subject_key}; {trial_name})",
-                    "reference_path": trial_ref_path,
+                    "comparison_level": "average",
+                    "trial_name": "average",
+                    "subject_fc": subject_fc_name,
+                    "subject_fc_path": str(fc_bbr_path),
+                    "reference": fc_ref_name,
+                    "reference_path": ref_path,
                     "scale": "cortical",
                     "r": r,
                     "n_edges": n_edges,
                     "figure": str(fc_png),
                 }
             )
-
-        ref_fc, ref_path = load_hcp_average_fc_reference(fc_reference_root, subject_key)
-        fc_ref_name = f"HCP individual average ({ref_path})"
-        fc_png = fc_dir / f"{args.subject_id}_fc_compare.png"
-        r, n_edges = plot_pair(subject_fc_cortical, ref_fc, "FC cortical average", fc_png)
-        metrics.append(
-            {
-                "modality": "FC",
-                "comparison_level": "average",
-                "trial_name": "average",
-                "subject_fc": subject_fc_name,
-                "subject_fc_path": str(final_dir / f"{args.subject_id}_FC_bbr_pearson.csv"),
-                "reference": fc_ref_name,
-                "reference_path": ref_path,
-                "scale": "cortical",
-                "r": r,
-                "n_edges": n_edges,
-                "figure": str(fc_png),
-            }
-        )
-    else:
-        ref_fc, ref_path = load_parkinson_fc_reference(fc_reference_root)
-        fc_ref_name = f"HCP group ({ref_path})"
-        fc_png = fc_dir / f"{args.subject_id}_fc_compare.png"
-        r, n_edges = plot_pair(subject_fc_cortical, ref_fc, "FC cortical", fc_png)
-        metrics.append(
-            {
-                "modality": "FC",
-                "comparison_level": "group",
-                "trial_name": "average",
-                "subject_fc": subject_fc_name,
-                "subject_fc_path": str(final_dir / f"{args.subject_id}_FC_bbr_pearson.csv"),
-                "reference": fc_ref_name,
-                "reference_path": ref_path,
-                "scale": "cortical",
-                "r": r,
-                "n_edges": n_edges,
-                "figure": str(fc_png),
-            }
-        )
+        else:
+            ref_fc, ref_path = load_parkinson_fc_reference(fc_reference_root)
+            fc_ref_name = f"HCP group ({ref_path})"
+            fc_png = fc_dir / f"{args.subject_id}_fc_compare.png"
+            r, n_edges = plot_pair(subject_fc_cortical, ref_fc, "FC cortical", fc_png)
+            metrics.append(
+                {
+                    "modality": "FC",
+                    "comparison_level": "group",
+                    "trial_name": "average",
+                    "subject_fc": subject_fc_name,
+                    "subject_fc_path": str(fc_bbr_path),
+                    "reference": fc_ref_name,
+                    "reference_path": ref_path,
+                    "scale": "cortical",
+                    "r": r,
+                    "n_edges": n_edges,
+                    "figure": str(fc_png),
+                }
+            )
 
     sc_reference_root = Path(args.sc_reference_root)
     sc_ref = load_sc_reference(sc_reference_root)
@@ -244,16 +245,16 @@ def main():
 
     subcortical_idx = [i for i, src in enumerate(source_labels) if src == "subcortical"]
     scale_map = {
-        "whole_brain": list(range(len(common_labels))),
-        "cortical": [i for i in range(len(common_labels)) if subject_idx[i] in cortical_idx],
-        "subcortical": [i for i in range(len(common_labels)) if subject_idx[i] in subcortical_idx],
+        "whole": list(range(len(common_labels))),
+        "cortex": [i for i in range(len(common_labels)) if subject_idx[i] in cortical_idx],
+        "subcortex": [i for i in range(len(common_labels)) if subject_idx[i] in subcortical_idx],
     }
 
     sc_inputs = [
-        ("sift2", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_sift2.csv")),
-        ("sift2_invnodevol", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv")),
-        ("count", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_count.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_count.csv")),
-        ("count_invnodevol", load_matrix(final_dir / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv"), str(final_dir / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv")),
+        ("sift2", load_matrix(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_sift2.csv"), str(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_sift2.csv")),
+        ("sift2_invnodevol", load_matrix(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv"), str(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_sift2_invnodevol.csv")),
+        ("count", load_matrix(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_count.csv"), str(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_count.csv")),
+        ("count_invnodevol", load_matrix(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv"), str(final_dir / "dwi" / "sc" / "whole" / f"{args.subject_id}_DTI_connectome_count_invnodevol.csv")),
     ]
 
     for sc_type, sc_variant, sc_path in sc_inputs:

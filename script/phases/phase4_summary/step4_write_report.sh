@@ -12,16 +12,16 @@ load_config
 setup_tools_env
 
 # 定义生成 summary 报告需要引用的关键文件。
-ATLAS_NII="${ATLAS_DIR}/${SUBJECT_ID}_desc-custom_dseg.nii.gz"
-FC_R="${FINAL_DIR}/${SUBJECT_ID}_FC_pearson.csv"
-FC_Z="${FINAL_DIR}/${SUBJECT_ID}_FC_fisherz.csv"
+ATLAS_NII="${FINAL_DIR}/dwi/atlas/${SUBJECT_ID}_desc-custom_dseg.nii.gz"
+FC_R="${FINAL_DIR}/func/fc/average/step11/${SUBJECT_ID}_FC_pearson.csv"
+FC_Z="${FINAL_DIR}/func/fc/average/step11/${SUBJECT_ID}_FC_fisherz.csv"
 FMRI_TRIALS_TSV="${FINAL_DIR}/func/fmri_trials.tsv"
 FMRI_TRIALS_QC_JSON="${REPORTS_DIR}/fmri_trials_qc.json"
-SC_SIFT2="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2.csv"
-SC_SIFT2_INVNODEVOL="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2_invnodevol.csv"
-SC_COUNT="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count.csv"
-SC_COUNT_INVNODEVOL="${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count_invnodevol.csv"
-TVP_MODEL_DIR="${FINAL_DIR}/modeling/tvp"
+SC_SIFT2="${FINAL_DIR}/dwi/sc/whole/${SUBJECT_ID}_DTI_connectome_sift2.csv"
+SC_SIFT2_INVNODEVOL="${FINAL_DIR}/dwi/sc/whole/${SUBJECT_ID}_DTI_connectome_sift2_invnodevol.csv"
+SC_COUNT="${FINAL_DIR}/dwi/sc/whole/${SUBJECT_ID}_DTI_connectome_count.csv"
+SC_COUNT_INVNODEVOL="${FINAL_DIR}/dwi/sc/whole/${SUBJECT_ID}_DTI_connectome_count_invnodevol.csv"
+TVP_MODEL_DIR="${FINAL_DIR}/dwi/modeling/tvp"
 SUMMARY_MD="${REPORTS_DIR}/phase4_summary.md"
 SUMMARY_MANIFEST="${REPORTS_DIR}/manifest.tsv"
 
@@ -31,16 +31,25 @@ if [[ -f "${SUMMARY_MD}" && -f "${SUMMARY_MANIFEST}" ]]; then
   exit 0
 fi
 
+FC_R_DISPLAY="N/A"
+FC_Z_DISPLAY="N/A"
+if [[ -f "${FC_R}" ]]; then
+  FC_R_DISPLAY="${FC_R}"
+fi
+if [[ -f "${FC_Z}" ]]; then
+  FC_Z_DISPLAY="${FC_Z}"
+fi
+
 # 生成简明的 markdown 汇总报告。
 cat > "${SUMMARY_MD}" <<EOF
 # Pipeline Summary (${SUBJECT_ID})
 
 ## Final Files
 
-- Atlas: ${FINAL_DIR}/atlas/$(basename "$ATLAS_NII")
+- Atlas: ${ATLAS_NII}
 - Labels: ${FINAL_DIR}/${SUBJECT_ID}_labels.tsv
-- FC Pearson: ${FINAL_DIR}/${SUBJECT_ID}_FC_pearson.csv
-- FC Fisher-z: ${FINAL_DIR}/${SUBJECT_ID}_FC_fisherz.csv
+- FC Pearson: ${FC_R_DISPLAY}
+- FC Fisher-z: ${FC_Z_DISPLAY}
 - fMRI Trial Table: ${FMRI_TRIALS_TSV}
 - SC SIFT2: ${SC_SIFT2}
 - SC SIFT2 InvNodeVol: ${SC_SIFT2_INVNODEVOL}
@@ -60,8 +69,8 @@ key	value
 subject_id	${SUBJECT_ID}
 final_dir	${FINAL_DIR}
 atlas	${ATLAS_NII}
-fc_pearson	${FC_R}
-fc_fisherz	${FC_Z}
+fc_pearson	${FC_R_DISPLAY}
+fc_fisherz	${FC_Z_DISPLAY}
 fmri_trials	${FMRI_TRIALS_TSV}
 sc_sift2	${SC_SIFT2}
 sc_sift2_invnodevol	${SC_SIFT2_INVNODEVOL}

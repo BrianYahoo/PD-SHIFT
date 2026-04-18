@@ -13,6 +13,8 @@ setup_tools_env
 
 # 检查当前 step 依赖的命令是否存在。
 require_cmd flirt
+require_cmd fslmaths
+require_cmd img2imgcoord
 require_cmd mrcalc
 require_cmd 5ttgen
 require_cmd 5tt2gmwmi
@@ -29,6 +31,43 @@ VIS_REG_DIR="${PHASE3_DWI_VIS_DIR}/registration"
 VIS_REG_DONE="${VIS_REG_DIR}/split_overlay.done"
 T2_IN_DWI="${DWI_DIR}/t2_in_dwi.nii.gz"
 FIVETT_SCRATCH_DIR="${DWI_DIR}/scratch_5ttgen"
+ATLAS_SMALL_NUCLEI_SCRATCH_DIR="${DWI_DIR}/scratch_small_nuclei_repair"
+ATLAS_SMALL_NUCLEI_REPORT="${DWI_DIR}/atlas_small_nuclei_repair.json"
+
+atlas_small_nuclei_ready() {
+  if [[ "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:-1}" != "1" ]]; then
+    return 0
+  fi
+  [[ -f "${DWI_DIR}/atlas_in_dwi.nii.gz" && -f "${ATLAS_T1}" && -f "${ATLAS_SMALL_NUCLEI_REPORT}" ]] || return 1
+  "${PYTHON_BIN}" - "${ATLAS_T1}" "${DWI_DIR}/atlas_in_dwi.nii.gz" "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" <<'PY'
+import sys
+import nibabel as nib
+import numpy as np
+
+src = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[1]).dataobj)) if float(v) > 0}
+tgt = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[2]).dataobj)) if float(v) > 0}
+protected = [int(v.strip()) for v in sys.argv[3].split(",") if v.strip()]
+for idx in protected:
+    if idx in src and idx not in tgt:
+        raise SystemExit(1)
+raise SystemExit(0)
+PY
+}
+
+atlas_in_dwi_requires_refresh() {
+  [[ -f "${ATLAS_T1}" && -f "${DWI_DIR}/atlas_in_dwi.nii.gz" ]] || return 1
+  "${PYTHON_BIN}" - "${ATLAS_T1}" "${DWI_DIR}/atlas_in_dwi.nii.gz" "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" <<'PY'
+import sys
+import nibabel as nib
+import numpy as np
+
+src = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[1]).dataobj)) if float(v) > 0}
+tgt = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[2]).dataobj)) if float(v) > 0}
+protected = {int(v.strip()) for v in sys.argv[3].split(",") if v.strip()}
+missing_nonprotected = sorted((src - tgt) - protected)
+raise SystemExit(0 if missing_nonprotected else 1)
+PY
+}
 
 dwi_visualizations_ready() {
   [[ -f "${VIS_REG_DONE}" ]] || return 1
@@ -37,7 +76,9 @@ dwi_visualizations_ready() {
 }
 
 # 如果 DWI 空间下的配准和 5TT 结果已经存在，则直接跳过。
-if [[ -f "${DWI_DIR}/t1_to_dwi.mat" && -f "${DWI_DIR}/atlas_in_dwi.nii.gz" && -f "${DWI_DIR}/aparc+aseg_int.nii.gz" && -f "${DWI_DIR}/aparc+aseg_dwi.nii.gz" && -f "${DWI_DIR}/5tt_dwi.mif" && -f "${DWI_DIR}/gmwmi_seed.mif" && ( "${DWI_5TT_FIX_HYBRID_SUBCGM:-1}" != "1" || -f "${DWI_DIR}/5tt_subcgm_fix.json" ) && dwi_visualizations_ready ]]; then
+if [[ -f "${DWI_DIR}/t1_to_dwi.mat" && -f "${DWI_DIR}/atlas_in_dwi.nii.gz" && -f "${DWI_DIR}/aparc+aseg_int.nii.gz" && -f "${DWI_DIR}/aparc+aseg_dwi.nii.gz" && -f "${DWI_DIR}/5tt_dwi.mif" && -f "${DWI_DIR}/gmwmi_seed.mif" && ( "${DWI_5TT_FIX_HYBRID_SUBCGM:-1}" != "1" || -f "${DWI_DIR}/5tt_subcgm_fix.json" ) ]] \
+  && atlas_small_nuclei_ready \
+  && dwi_visualizations_ready; then
   log "[phase3_dwi] Step4 already done for ${SUBJECT_ID}"
   exit 0
 fi
@@ -53,8 +94,61 @@ if [[ ! -f "${DWI_DIR}/t1_to_dwi.mat" ]]; then
 fi
 
 # 如果 custom atlas 还没投到 DWI 空间，则执行最近邻投影。
+if atlas_in_dwi_requires_refresh; then
+  rm -f "${DWI_DIR}/atlas_in_dwi.nii.gz" "${ATLAS_SMALL_NUCLEI_REPORT}" "${VIS_REG_DONE}"
+fi
+
 if [[ ! -f "${DWI_DIR}/atlas_in_dwi.nii.gz" ]]; then
   flirt -in "$ATLAS_T1" -ref "${DWI_DIR}/mean_b0.nii.gz" -out "${DWI_DIR}/atlas_in_dwi.nii.gz" -applyxfm -init "${DWI_DIR}/t1_to_dwi.mat" -interp nearestneighbour >"${DWI_DIR}/flirt_atlas_to_dwi.log" 2>&1
+fi
+
+if [[ "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:-1}" == "1" ]] && ! atlas_small_nuclei_ready; then
+  mkdir -p "${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}"
+  rm -f "${ATLAS_SMALL_NUCLEI_REPORT}"
+  IFS=',' read -r -a protected_small_labels <<< "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}"
+  for label_idx in "${protected_small_labels[@]}"; do
+    label_idx="${label_idx//[[:space:]]/}"
+    [[ -n "${label_idx}" ]] || continue
+    source_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_src.nii.gz"
+    work_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_work.nii.gz"
+    target_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_prob.nii.gz"
+    fslmaths "${ATLAS_T1}" -thr "${label_idx}" -uthr "${label_idx}" -bin "${source_mask}"
+    cp -f "${source_mask}" "${work_mask}"
+    rm -f "${target_mask}"
+    for dil_iter in 0 1 2 3 4; do
+      if [[ "${dil_iter}" -gt 0 ]]; then
+        fslmaths "${work_mask}" -dilM "${work_mask}"
+      fi
+      flirt -in "${work_mask}" \
+        -ref "${DWI_DIR}/mean_b0.nii.gz" \
+        -out "${target_mask}" \
+        -applyxfm \
+        -init "${DWI_DIR}/t1_to_dwi.mat" \
+        -interp nearestneighbour >"${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/flirt_label_${label_idx}.log" 2>&1
+      if "${PYTHON_BIN}" - "${target_mask}" <<'PY' >/dev/null 2>&1
+import sys
+import nibabel as nib
+import numpy as np
+
+data = np.asarray(nib.load(sys.argv[1]).dataobj)
+raise SystemExit(0 if np.count_nonzero(data) > 0 else 1)
+PY
+      then
+        break
+      fi
+    done
+  done
+  "${PYTHON_BIN}" "${UTILS_DIR}/phase3_dwi/step4/preserve_small_nuclei_labels.py" \
+    --source-atlas "${ATLAS_T1}" \
+    --target-atlas "${DWI_DIR}/atlas_in_dwi.nii.gz" \
+    --transform-mat "${DWI_DIR}/t1_to_dwi.mat" \
+    --labels-tsv "${ATLAS_LABELS}" \
+    --candidate-dir "${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}" \
+    --protected-labels "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" \
+    --output "${DWI_DIR}/atlas_in_dwi.fixed.nii.gz" \
+    --report "${ATLAS_SMALL_NUCLEI_REPORT}"
+  mv -f "${DWI_DIR}/atlas_in_dwi.fixed.nii.gz" "${DWI_DIR}/atlas_in_dwi.nii.gz"
+  rm -rf "${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}"
 fi
 
 if [[ -f "${T2_BRAIN}" && ! -f "${T2_IN_DWI}" ]]; then

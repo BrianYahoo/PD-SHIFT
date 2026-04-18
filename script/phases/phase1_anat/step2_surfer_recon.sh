@@ -15,10 +15,12 @@ setup_tools_env
 require_cmd mri_convert
 require_cmd mri_vol2vol
 require_cmd mri_binarize
+require_cmd mri_surf2volseg
 if [[ "${SURFER_TYPE}" == "free" ]]; then
   require_cmd recon-all
   require_cmd mri_aparc2aseg
 else
+  require_cmd mris_ca_label
   [[ -f "${FASTSURFER_HOME}/run_fastsurfer.sh" ]] || die "Missing FastSurfer entrypoint: ${FASTSURFER_HOME}/run_fastsurfer.sh"
 fi
 
@@ -55,8 +57,14 @@ FASTSURFER_DEEPSEG_MGZ="${SURFER_SUBJECT_DIR}/mri/aparc.DKTatlas+aseg.deep.mgz"
 FASTSURFER_MAPPED_MGZ="${SURFER_SUBJECT_DIR}/mri/aparc.DKTatlas+aseg.mapped.mgz"
 FASTSURFER_ORIG_NU="${SURFER_SUBJECT_DIR}/mri/orig_nu.mgz"
 FASTSURFER_MASK="${SURFER_SUBJECT_DIR}/mri/mask.mgz"
+FASTSURFER_FSAPARC_LH="${SURFER_SUBJECT_DIR}/label/lh.aparc.annot"
+FASTSURFER_FSAPARC_RH="${SURFER_SUBJECT_DIR}/label/rh.aparc.annot"
+FASTSURFER_DESIKAN_MGZ="${SURFER_SUBJECT_DIR}/mri/aparc+aseg.desikan.mgz"
+FASTSURFER_DESIKAN_LH_CLASSIFIER="${FREESURFER_HOME}/average/lh.curvature.buckner40.filled.desikan_killiany.2010-03-25.gcs"
+FASTSURFER_DESIKAN_RH_CLASSIFIER="${FREESURFER_HOME}/average/rh.curvature.buckner40.filled.desikan_killiany.2010-03-25.gcs"
 FS_EXPERT_OPTS="${PHASE1_ANAT_STEP2_DIR}/recon-all.expert.opts"
 PHASE0_STEP1_MANIFEST="${PHASE0_INIT_STEP1_DIR}/manifest.tsv"
+FASTSURFER_REQUIRED_DESIKAN_LABELS=(1001 1032 1033 2001 2032 2033)
 SURFER_T2_INPUT=""
 SURFER_USE_T2="0"
 if [[ "${PHASE1_T2_SURFER_ENABLE:-0}" == "1" && -f "${T2_COREG_T1}" ]]; then
@@ -184,6 +192,91 @@ same_shape = t1.shape == aparc.shape
 same_affine = np.allclose(t1.affine, aparc.affine)
 raise SystemExit(0 if same_shape and same_affine else 1)
 PY
+}
+
+volume_has_labels() {
+  local volume_path="$1"
+  shift
+  [[ -f "${volume_path}" ]] || return 1
+  "${PYTHON_BIN}" - "${volume_path}" "$@" <<'PY'
+import sys
+import nibabel as nib
+import numpy as np
+
+values = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[1]).dataobj)) if float(v) > 0}
+required = {int(v) for v in sys.argv[2:]}
+raise SystemExit(0 if required.issubset(values) else 1)
+PY
+}
+
+fastsurfer_desikan_repair_enabled() {
+  [[ "${SURFER_TYPE}" == "fast" && "${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}" == "1" ]]
+}
+
+fastsurfer_desikan_labels_ready_in_volume() {
+  local volume_path="$1"
+  volume_has_labels "${volume_path}" "${FASTSURFER_REQUIRED_DESIKAN_LABELS[@]}"
+}
+
+step2_native_outputs_ready() {
+  aparc_native_ready || return 1
+  if fastsurfer_desikan_repair_enabled; then
+    fastsurfer_desikan_labels_ready_in_volume "${APARC_ASEG}" || return 1
+  fi
+}
+
+repair_fastsurfer_desikan_aparc() {
+  local tmp_lh="${SURFER_SUBJECT_DIR}/label/lh.aparc.desikan_tmp.annot"
+  local tmp_rh="${SURFER_SUBJECT_DIR}/label/rh.aparc.desikan_tmp.annot"
+  local tmp_mgz="${FASTSURFER_DESIKAN_MGZ%.mgz}.tmp.mgz"
+
+  fastsurfer_desikan_repair_enabled || return 0
+  [[ -f "${SURFER_APARC_ASEG_MGZ}" ]] || return 1
+  if fastsurfer_desikan_labels_ready_in_volume "${SURFER_APARC_ASEG_MGZ}"; then
+    return 0
+  fi
+
+  [[ -f "${SURFER_SUBJECT_DIR}/mri/aseg.presurf.mgz" ]] || die "Missing FastSurfer aseg.presurf.mgz for Desikan repair: ${SURFER_SUBJECT_DIR}/mri/aseg.presurf.mgz"
+  [[ -f "${SURFER_SUBJECT_DIR}/surf/lh.sphere.reg" && -f "${SURFER_SUBJECT_DIR}/surf/rh.sphere.reg" ]] || die "Missing FastSurfer sphere.reg for Desikan repair: ${SURFER_SUBJECT_DIR}/surf"
+  [[ -f "${FASTSURFER_DESIKAN_LH_CLASSIFIER}" && -f "${FASTSURFER_DESIKAN_RH_CLASSIFIER}" ]] || die "Missing FreeSurfer Desikan classifiers under ${FREESURFER_HOME}/average"
+
+  log "[phase1_anat] Step2 supplementing FastSurfer DKT output with Desikan cortical labels for ${SUBJECT_ID}"
+  mris_ca_label \
+    -l "${SURFER_SUBJECT_DIR}/label/lh.cortex.label" \
+    -aseg "${SURFER_SUBJECT_DIR}/mri/aseg.presurf.mgz" \
+    -seed 1234 \
+    "${SUBJECT_ID}" \
+    lh \
+    "${SURFER_SUBJECT_DIR}/surf/lh.sphere.reg" \
+    "${FASTSURFER_DESIKAN_LH_CLASSIFIER}" \
+    "${tmp_lh}" >"${PHASE1_ANAT_STEP2_DIR}/mris_ca_label_lh.log" 2>&1
+  mris_ca_label \
+    -l "${SURFER_SUBJECT_DIR}/label/rh.cortex.label" \
+    -aseg "${SURFER_SUBJECT_DIR}/mri/aseg.presurf.mgz" \
+    -seed 1234 \
+    "${SUBJECT_ID}" \
+    rh \
+    "${SURFER_SUBJECT_DIR}/surf/rh.sphere.reg" \
+    "${FASTSURFER_DESIKAN_RH_CLASSIFIER}" \
+    "${tmp_rh}" >"${PHASE1_ANAT_STEP2_DIR}/mris_ca_label_rh.log" 2>&1
+  mri_surf2volseg \
+    --o "${tmp_mgz}" \
+    --label-cortex \
+    --i "${SURFER_SUBJECT_DIR}/mri/aseg.mgz" \
+    --threads "${NTHREADS}" \
+    --lh-annot "${tmp_lh}" 1000 \
+    --lh-cortex-mask "${SURFER_SUBJECT_DIR}/label/lh.cortex.label" \
+    --lh-white "${SURFER_SUBJECT_DIR}/surf/lh.white" \
+    --lh-pial "${SURFER_SUBJECT_DIR}/surf/lh.pial" \
+    --rh-annot "${tmp_rh}" 2000 \
+    --rh-cortex-mask "${SURFER_SUBJECT_DIR}/label/rh.cortex.label" \
+    --rh-white "${SURFER_SUBJECT_DIR}/surf/rh.white" \
+    --rh-pial "${SURFER_SUBJECT_DIR}/surf/rh.pial" >"${PHASE1_ANAT_STEP2_DIR}/mri_surf2volseg_desikan.log" 2>&1
+  fastsurfer_desikan_labels_ready_in_volume "${tmp_mgz}" || die "FastSurfer Desikan repair still missing required cortical labels: ${tmp_mgz}"
+
+  mv -f "${tmp_lh}" "${FASTSURFER_FSAPARC_LH}"
+  mv -f "${tmp_rh}" "${FASTSURFER_FSAPARC_RH}"
+  mv -f "${tmp_mgz}" "${SURFER_APARC_ASEG_MGZ}"
 }
 
 ensure_freesurfer_brainmask() {
@@ -383,7 +476,7 @@ fi
 
 # 如果当前 step 的主要结果都已存在且 aparc+aseg 已处于 T1 native space，则直接跳过。
 # 这里要兼容旧版 FreeSurfer 结果：历史产物可能还没有新的 surfer.done，但关键输出已经齐全。
-if [[ -f "${STEP2_MANIFEST}" ]] && surfer_surfaces_ready && surfer_core_volumes_ready && aparc_native_ready && ! freesurfer_uses_v8_defaults; then
+if [[ -f "${STEP2_MANIFEST}" ]] && surfer_surfaces_ready && surfer_core_volumes_ready && step2_native_outputs_ready && ! freesurfer_uses_v8_defaults; then
   [[ -f "${SURFER_DONE}" ]] || write_surfer_done
   log "[phase1_anat] Step2 already done for ${SUBJECT_ID}"
   exit 0
@@ -393,6 +486,7 @@ fi
 if [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_engine_outputs_ready; then
   ensure_fastsurfer_surface_inputs
   ensure_fastsurfer_aparc_aseg
+  repair_fastsurfer_desikan_aparc
 fi
 
 # 兼容历史 FreeSurfer 结果：如果 recon-all 已经完整结束、只是在 step2 外层收尾阶段中断，
@@ -492,6 +586,7 @@ fi
 surfer_core_volumes_ready || die "${SURFER_LABEL} core volumes missing after recon: ${SURFER_SUBJECT_DIR}/mri"
 if [[ "${SURFER_TYPE}" == "fast" ]]; then
   ensure_fastsurfer_aparc_aseg
+  repair_fastsurfer_desikan_aparc
 fi
 
 # 导出体素版 aparc+aseg，并强制回到原始 T1 native space。
@@ -501,13 +596,17 @@ fi
 
 [[ -f "${SURFER_APARC_ASEG_MGZ}" ]] || die "Missing aparc+aseg from ${SURFER_LABEL}: ${SURFER_APARC_ASEG_MGZ}"
 
-if ! aparc_native_ready; then
+if ! step2_native_outputs_ready; then
   mri_vol2vol \
     --mov "${SURFER_APARC_ASEG_MGZ}" \
     --targ "${T1_NATIVE_INPUT}" \
     --regheader \
     --interp nearest \
     --o "${APARC_ASEG}" >"${PHASE1_ANAT_STEP2_DIR}/mri_vol2vol_aparc_native.log" 2>&1
+fi
+
+if fastsurfer_desikan_repair_enabled; then
+  fastsurfer_desikan_labels_ready_in_volume "${APARC_ASEG}" || die "FastSurfer native aparc+aseg still missing Desikan cortical labels after export: ${APARC_ASEG}"
 fi
 
 write_surfer_done
@@ -533,6 +632,7 @@ surfer_hires_reason	${SURFER_HIRES_REASON}
 surfer_use_t2	${SURFER_USE_T2}
 surfer_t2_input	${SURFER_T2_INPUT}
 fastsurfer_vox_size	${PHASE1_FASTSURFER_VOX_SIZE:-min}
+fastsurfer_desikan_repair_enabled	${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}
 t1_resample_voxel_size_mm	${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}
 recon_all_expert_opts	${FS_EXPERT_OPTS}
 freesurfer_cortex_label_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "${PHASE1_FREESURFER_CORTEX_LABEL_ARGS:-}" || echo "" )

@@ -15,6 +15,22 @@ setup_tools_env
 require_cmd tck2connectome
 require_cmd "$PYTHON_BIN"
 
+matrix_matches_current_atlas() {
+  local matrix_path="$1"
+  [[ -f "${matrix_path}" ]] || return 1
+  "${PYTHON_BIN}" - "${matrix_path}" "${DWI_DIR}/atlas_in_dwi.nii.gz" <<'PY'
+import sys
+import nibabel as nib
+import numpy as np
+
+matrix = np.loadtxt(sys.argv[1], delimiter=",")
+atlas = np.asarray(nib.load(sys.argv[2]).dataobj)
+atlas_max = int(np.max(atlas))
+ok = matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1] == atlas_max
+raise SystemExit(0 if ok else 1)
+PY
+}
+
 run_connectome() {
   local out_csv="$1"
   local radial_search="$2"
@@ -54,8 +70,55 @@ COMPARE_SC_COUNT_INVNODEVOL="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_count_invno
 VIS_DIR="${PHASE3_DWI_VIS_DIR}"
 COMPARE_RADIAL_PNG="${VIS_DIR}/compare_radial.png"
 COMPARE_RADIAL_INVNODEVOL_PNG="${VIS_DIR}/compare_radial_invnodevol.png"
+MAIN_SC_SIFT2_REPAIR_REPORT="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_sift2_zero_label_repair.json"
+MAIN_SC_SIFT2_INVNODEVOL_REPAIR_REPORT="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_sift2_invnodevol_zero_label_repair.json"
+MAIN_SC_COUNT_REPAIR_REPORT="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_count_zero_label_repair.json"
+MAIN_SC_COUNT_INVNODEVOL_REPAIR_REPORT="${DWI_DIR}/${SUBJECT_ID}_DTI_connectome_count_invnodevol_zero_label_repair.json"
 
 mkdir -p "$VIS_DIR"
+
+reset_matrix_if_shape_mismatch() {
+  local matrix_path="$1"
+  shift
+  if [[ -f "${matrix_path}" ]] && ! matrix_matches_current_atlas "${matrix_path}"; then
+    rm -f "${matrix_path}" "$@"
+  fi
+}
+
+reset_matrix_if_shape_mismatch "$MAIN_SC_SIFT2" "$MAIN_SC_SIFT2_REPAIR_REPORT"
+reset_matrix_if_shape_mismatch "$MAIN_SC_SIFT2_INVNODEVOL" "$MAIN_SC_SIFT2_INVNODEVOL_REPAIR_REPORT"
+reset_matrix_if_shape_mismatch "$MAIN_SC_COUNT" "$MAIN_SC_COUNT_REPAIR_REPORT"
+reset_matrix_if_shape_mismatch "$MAIN_SC_COUNT_INVNODEVOL" "$MAIN_SC_COUNT_INVNODEVOL_REPAIR_REPORT"
+reset_matrix_if_shape_mismatch "$COMPARE_SC_SIFT2"
+reset_matrix_if_shape_mismatch "$COMPARE_SC_SIFT2_INVNODEVOL"
+reset_matrix_if_shape_mismatch "$COMPARE_SC_COUNT"
+reset_matrix_if_shape_mismatch "$COMPARE_SC_COUNT_INVNODEVOL"
+
+repair_zero_label_connectome_if_needed() {
+  local matrix_path="$1"
+  local repair_report="$2"
+  local weight_mode="$3"
+  local scale_mode="$4"
+
+  if [[ "${DWI_CONNECTOME_REPAIR_ZERO_PROTECTED_LABELS:-1}" != "1" ]]; then
+    return 0
+  fi
+
+  "${PYTHON_BIN}" "${UTILS_DIR}/phase3_dwi/step6/repair_zero_connection_labels.py" \
+    --tracks "${DWI_DIR}/tracks.tck" \
+    --atlas "${DWI_DIR}/atlas_in_dwi.nii.gz" \
+    --matrix "${matrix_path}" \
+    --output "${matrix_path}.fixed" \
+    --report "${repair_report}" \
+    --weight-mode "${weight_mode}" \
+    --scale-mode "${scale_mode}" \
+    --sift2-weights "${DWI_DIR}/sift2_weights.txt" \
+    --radial-search "${MAIN_RADIAL_SEARCH}" \
+    --protected-labels "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" \
+    --max-dilation "${DWI_CONNECTOME_ZERO_LABEL_MAX_DILATION:-12}" \
+    --nthreads "${NTHREADS}"
+  mv -f "${matrix_path}.fixed" "${matrix_path}"
+}
 
 # 如果主流程、对比实验和可视化都已存在，则直接跳过。
 if [[ -f "$MAIN_SC_SIFT2" \
@@ -68,7 +131,8 @@ if [[ -f "$MAIN_SC_SIFT2" \
    && -f "$COMPARE_SC_COUNT_INVNODEVOL" \
    && -f "$COMPARE_RADIAL_PNG" \
    && -f "$COMPARE_RADIAL_INVNODEVOL_PNG" \
-   && -f "${DWI_DIR}/manifest.tsv" ]]; then
+   && -f "${DWI_DIR}/manifest.tsv" ]] \
+  && { [[ "${DWI_CONNECTOME_REPAIR_ZERO_PROTECTED_LABELS:-1}" != "1" ]] || { [[ -f "${MAIN_SC_SIFT2_REPAIR_REPORT}" ]] && [[ -f "${MAIN_SC_SIFT2_INVNODEVOL_REPAIR_REPORT}" ]] && [[ -f "${MAIN_SC_COUNT_REPAIR_REPORT}" ]] && [[ -f "${MAIN_SC_COUNT_INVNODEVOL_REPAIR_REPORT}" ]]; }; }; then
   log "[phase3_dwi] Step6 already done for ${SUBJECT_ID}"
   exit 0
 fi
@@ -77,21 +141,25 @@ fi
 if [[ ! -f "$MAIN_SC_SIFT2" ]]; then
   run_connectome "$MAIN_SC_SIFT2" "$MAIN_RADIAL_SEARCH" "sift2" "raw"
 fi
+repair_zero_label_connectome_if_needed "$MAIN_SC_SIFT2" "$MAIN_SC_SIFT2_REPAIR_REPORT" "sift2" "raw"
 
 # 主流程：按 node volume 归一化的 SIFT2 矩阵。
 if [[ ! -f "$MAIN_SC_SIFT2_INVNODEVOL" ]]; then
   run_connectome "$MAIN_SC_SIFT2_INVNODEVOL" "$MAIN_RADIAL_SEARCH" "sift2" "invnodevol"
 fi
+repair_zero_label_connectome_if_needed "$MAIN_SC_SIFT2_INVNODEVOL" "$MAIN_SC_SIFT2_INVNODEVOL_REPAIR_REPORT" "sift2" "invnodevol"
 
 # 主流程：未缩放的 streamline count 矩阵。
 if [[ ! -f "$MAIN_SC_COUNT" ]]; then
   run_connectome "$MAIN_SC_COUNT" "$MAIN_RADIAL_SEARCH" "count" "raw"
 fi
+repair_zero_label_connectome_if_needed "$MAIN_SC_COUNT" "$MAIN_SC_COUNT_REPAIR_REPORT" "count" "raw"
 
 # 主流程：按 node volume 归一化的 streamline count 矩阵。
 if [[ ! -f "$MAIN_SC_COUNT_INVNODEVOL" ]]; then
   run_connectome "$MAIN_SC_COUNT_INVNODEVOL" "$MAIN_RADIAL_SEARCH" "count" "invnodevol"
 fi
+repair_zero_label_connectome_if_needed "$MAIN_SC_COUNT_INVNODEVOL" "$MAIN_SC_COUNT_INVNODEVOL_REPAIR_REPORT" "count" "invnodevol"
 
 # radial4：未缩放的 SIFT2 矩阵。
 if [[ ! -f "$COMPARE_SC_SIFT2" ]]; then
@@ -146,6 +214,10 @@ sc_sift2	${MAIN_SC_SIFT2}
 sc_sift2_invnodevol	${MAIN_SC_SIFT2_INVNODEVOL}
 sc_count	${MAIN_SC_COUNT}
 sc_count_invnodevol	${MAIN_SC_COUNT_INVNODEVOL}
+sc_sift2_zero_label_repair_report	${MAIN_SC_SIFT2_REPAIR_REPORT}
+sc_sift2_invnodevol_zero_label_repair_report	${MAIN_SC_SIFT2_INVNODEVOL_REPAIR_REPORT}
+sc_count_zero_label_repair_report	${MAIN_SC_COUNT_REPAIR_REPORT}
+sc_count_invnodevol_zero_label_repair_report	${MAIN_SC_COUNT_INVNODEVOL_REPAIR_REPORT}
 sc_sift2_radial4	${COMPARE_SC_SIFT2}
 sc_sift2_invnodevol_radial4	${COMPARE_SC_SIFT2_INVNODEVOL}
 sc_count_radial4	${COMPARE_SC_COUNT}

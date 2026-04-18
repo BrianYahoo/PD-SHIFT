@@ -11,7 +11,7 @@ load_config
 
 # 定义 TVP 建模输入矩阵的参考路径与当前导出目录。
 TVP_ROOT="${SC_REFERENCE_ROOT}"
-TVP_MODEL_DIR="${FINAL_DIR}/modeling/tvp"
+TVP_MODEL_DIR="${FINAL_DIR}/dwi/modeling/tvp"
 STEP2_MANIFEST="${REPORTS_DIR}/step2_export_tvp_model_inputs_manifest.tsv"
 
 TVP_CONN_EXCITATOR_IN="${TVP_ROOT}/conn_excitator.npy"

@@ -71,12 +71,30 @@ raise SystemExit(0 if same_shape and same_affine else 1)
 PY
 }
 
+hybrid_atlas_complete() {
+  [[ -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] || return 1
+  "${PYTHON_BIN}" - "${HYBRID_ATLAS}" "${HYBRID_LABELS}" <<'PY'
+import csv
+import sys
+import nibabel as nib
+import numpy as np
+
+atlas_values = {int(v) for v in np.unique(np.asarray(nib.load(sys.argv[1]).dataobj)) if float(v) > 0}
+with open(sys.argv[2], "r", encoding="utf-8") as f:
+    for row in csv.DictReader(f, delimiter="\t"):
+        if int(row["index"]) not in atlas_values:
+            raise SystemExit(1)
+raise SystemExit(0)
+PY
+}
+
 # 输出当前 step 的开始日志。
 log "[phase1_anat] Step6 distal inverse fusion for ${SUBJECT_ID}"
 
 # 如果当前 step 的主要结果都已存在，则直接跳过。
 if [[ -f "${STEP6_MANIFEST}" && -f "${DISTAL_NATIVE}" && -f "${SN_NATIVE}" && -f "${SUBC20_NATIVE}" && -f "${SUBC20_LABELS}" && -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] \
   && atlas_native_ready \
+  && hybrid_atlas_complete \
   && compgen -G "${VIS_T1_ATLAS_DIR}/z=*.png" > /dev/null \
   && compgen -G "${VIS_T1_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null \
   && { [[ "${STEP6_USE_T2_VIS}" != "1" ]] || { compgen -G "${VIS_T2_ATLAS_DIR}/z=*.png" > /dev/null && compgen -G "${VIS_T2_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null; }; }; then
@@ -119,7 +137,7 @@ if [[ ! -f "${SUBC20_NATIVE}" || ! -f "${SUBC20_LABELS}" ]] || ! atlas_native_re
 fi
 
 # 用固定 20 ROI 皮层下图谱覆盖 FreeSurfer 深部区域，输出最终 88 ROI Hybrid Atlas。
-if [[ ! -f "${HYBRID_ATLAS}" || ! -f "${HYBRID_LABELS}" ]] || ! atlas_native_ready; then
+if [[ ! -f "${HYBRID_ATLAS}" || ! -f "${HYBRID_LABELS}" ]] || ! atlas_native_ready || ! hybrid_atlas_complete; then
   "${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step6/merge_custom_atlas.py" \
     --aparc "${APARC_ASEG}" \
     --subcortical "${SUBC20_NATIVE}" \
