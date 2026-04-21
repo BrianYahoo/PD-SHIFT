@@ -13,6 +13,7 @@
 5. `step5_save_inverse_warp.sh`
 6. `step6_distal_inverse_fusion.sh`
 7. `step7_t1t2_myelin.sh`
+8. `step8_eeg_leadfield.sh`
 
 ## step1_brain_extract
 
@@ -81,3 +82,14 @@
 - Connectome Workbench `wb_command`
 - Python `extract_t1t2_myelin_profiles.py`
 - Python `plot_fslr_scalar_surfaces.py`
+
+## step8_eeg_leadfield
+
+- 这个 step 用 SimNIBS `charm` 和 `prepare_tdcs_leadfield` 生成个体化 5 层头模与 EEG 前向 leadfield，并把结果聚合成 68 个皮层 ROI 以及补零后的 88 ROI 矩阵。
+
+工具：
+
+- SimNIBS `charm`
+- SimNIBS `prepare_tdcs_leadfield`
+- Python `prepare_eeg_cap.py`
+- Python `build_eeg_leadfield_matrix.py`

@@ -38,12 +38,18 @@ VIS_T2_ATLAS_DIR="${VIS_ALIGN_DIR}/t2/atlas"
 VIS_T2_SUBCORTEX_DIR="${VIS_ALIGN_DIR}/t2/subcortex"
 ROI_MASTER_TSV="${PIPELINE_ROOT}/framework/details/roi.tsv"
 STEP6_USE_T2_VIS="0"
+STEP5_MANIFEST="${PHASE1_ANAT_STEP5_DIR}/manifest.tsv"
 STEP6_TRANSFORM_LAYOUT="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "transform_layout")"
 STEP6_FORWARD_AFFINE="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "forward_affine")"
 STEP6_FORWARD_WARP="$(read_manifest_value "${PHASE1_ANAT_STEP5_DIR}/manifest.tsv" "forward_warp")"
+STEP6_SOURCE_STEP3_ENGINE="$(read_manifest_value "${PHASE1_ANAT_STEP3_DIR}/manifest.tsv" "registration_engine")"
+STEP6_SOURCE_STEP5_MANIFEST_MTIME=""
 STEP6_ANTS_TRANSFORMS=()
 if [[ -f "${T2_BRAIN}" ]]; then
   STEP6_USE_T2_VIS="1"
+fi
+if [[ -f "${STEP5_MANIFEST}" ]]; then
+  STEP6_SOURCE_STEP5_MANIFEST_MTIME="$(stat -c '%Y' "${STEP5_MANIFEST}")"
 fi
 
 [[ -n "${STEP6_FORWARD_WARP}" ]] || STEP6_FORWARD_WARP="${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_1Warp.nii.gz"
@@ -88,16 +94,32 @@ raise SystemExit(0)
 PY
 }
 
+step6_outputs_ready() {
+  local manifest_transform_layout=""
+  local manifest_source_step3_engine=""
+  local manifest_source_step5_manifest_mtime=""
+  [[ -f "${STEP6_MANIFEST}" && -f "${DISTAL_NATIVE}" && -f "${SN_NATIVE}" && -f "${SUBC20_NATIVE}" && -f "${SUBC20_LABELS}" && -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] || return 1
+  atlas_native_ready || return 1
+  hybrid_atlas_complete || return 1
+  compgen -G "${VIS_T1_ATLAS_DIR}/z=*.png" > /dev/null || return 1
+  compgen -G "${VIS_T1_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null || return 1
+  if [[ "${STEP6_USE_T2_VIS}" == "1" ]]; then
+    compgen -G "${VIS_T2_ATLAS_DIR}/z=*.png" > /dev/null || return 1
+    compgen -G "${VIS_T2_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null || return 1
+  fi
+  manifest_transform_layout="$(read_manifest_value "${STEP6_MANIFEST}" "transform_layout")"
+  manifest_source_step3_engine="$(read_manifest_value "${STEP6_MANIFEST}" "source_step3_engine")"
+  manifest_source_step5_manifest_mtime="$(read_manifest_value "${STEP6_MANIFEST}" "source_step5_manifest_mtime")"
+  [[ "${manifest_transform_layout}" == "${STEP6_TRANSFORM_LAYOUT}" ]] || return 1
+  [[ "${manifest_source_step3_engine}" == "${STEP6_SOURCE_STEP3_ENGINE}" ]] || return 1
+  [[ "${manifest_source_step5_manifest_mtime}" == "${STEP6_SOURCE_STEP5_MANIFEST_MTIME}" ]] || return 1
+}
+
 # 输出当前 step 的开始日志。
 log "[phase1_anat] Step6 distal inverse fusion for ${SUBJECT_ID}"
 
 # 如果当前 step 的主要结果都已存在，则直接跳过。
-if [[ -f "${STEP6_MANIFEST}" && -f "${DISTAL_NATIVE}" && -f "${SN_NATIVE}" && -f "${SUBC20_NATIVE}" && -f "${SUBC20_LABELS}" && -f "${HYBRID_ATLAS}" && -f "${HYBRID_LABELS}" ]] \
-  && atlas_native_ready \
-  && hybrid_atlas_complete \
-  && compgen -G "${VIS_T1_ATLAS_DIR}/z=*.png" > /dev/null \
-  && compgen -G "${VIS_T1_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null \
-  && { [[ "${STEP6_USE_T2_VIS}" != "1" ]] || { compgen -G "${VIS_T2_ATLAS_DIR}/z=*.png" > /dev/null && compgen -G "${VIS_T2_SUBCORTEX_DIR}/GPe/z=*.png" > /dev/null; }; }; then
+if step6_outputs_ready; then
   log "[phase1_anat] Step6 already done for ${SUBJECT_ID}"
   exit 0
 fi
@@ -169,6 +191,9 @@ fi
 cat > "${STEP6_MANIFEST}" <<EOF
 key	value
 subject_id	${SUBJECT_ID}
+transform_layout	${STEP6_TRANSFORM_LAYOUT}
+source_step3_engine	${STEP6_SOURCE_STEP3_ENGINE}
+source_step5_manifest_mtime	${STEP6_SOURCE_STEP5_MANIFEST_MTIME}
 aparc_aseg	${APARC_ASEG}
 distal_native	${DISTAL_NATIVE}
 sn_native	${SN_NATIVE}

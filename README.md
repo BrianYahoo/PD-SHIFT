@@ -15,6 +15,7 @@
 * **Multi-Spectral Target Anchoring**: Leverages multi-channel `ANTs SyN` registration (T1w + T2w) combined with localized subcortical penalty masks, utilizing T2 iron deposition shadows to lock onto basal ganglia structures despite disease-related atrophy or ventricular enlargement.
 * **Multimodal Functional Integration**: Implements a rigorous resting-state fMRI preprocessing framework, seamlessly projecting the hybridized high-precision atlas into functional space to extract clean BOLD signals and generate robust Functional Connectivity (FC) matrices.
 * **Quantitative Connectomics**: Generates biologically meaningful, `SIFT2`-weighted structural connectomes coupled with inverse-node-volume scaling (`-scale_invnodevol`), outputting dimensionless probability density matrices perfectly optimized for differential equation-based dynamic network modeling.
+* **Individualized EEG Forward Modeling**: Supports subject-specific SimNIBS/CHARM head meshing and EEG leadfield aggregation, exporting cortex-only (`Nx68`) and Hybrid Atlas-aligned (`Nx88`) forward matrices that can be directly coupled to the same parcellation used by SC/FC.
 
 ---
 
@@ -33,6 +34,7 @@ PD-SHIFT is engineered with a modular, highly fault-tolerant architecture design
   * High-resolution cortical reconstruction via FreeSurfer/FastSurfer with T2-pial refinement.
   * Dual-channel (T1+T2) ANTs SyN nonlinear registration anchored by native/MNI subcortical masks.
   * Generates the individualized **Hybrid Atlas** (Cortical + DISTAL + SN).
+  * Optionally generates individualized **EEG Leadfield** matrices via SimNIBS (`Nx68` cortex, `Nx88` hybrid-order padded).
 
 ### Phase 2: Resting State fMRI Preprocessing (`phase2_fmri`)
 * **Function:** Rigorous functional time-series extraction and cleanup.
@@ -73,6 +75,7 @@ Ensure the following neuroimaging suites are installed and correctly added to yo
 * [**MRtrix3**](https://www.mrtrix.org/) (v3.0+)
 * [**ANTs**](https://github.com/ANTsX/ANTs) (Advanced Normalization Tools)
 * [**dcm2niix**](https://github.com/rordenlab/dcm2niix) (For DICOM to NIfTI conversion)
+* [**SimNIBS**](https://simnibs.github.io/simnibs/build/html/index.html) (For individualized EEG leadfield modeling)
 
 ### 3. Python Environment
 PD-SHIFT utilizes Python as the connective tissue for matrix operations and BIDS logic. We recommend using Conda:

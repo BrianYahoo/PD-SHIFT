@@ -10,15 +10,24 @@ source "${STEP_DIR}/../../common.sh"
 load_config
 # 加载 conda、FSL、FreeSurfer、ANTs 等工具环境。
 setup_tools_env
+if [[ "${PHASE1_LEADDBS_NATIVE_ENABLE:-0}" == "1" ]]; then
+  setup_leaddbs_env
+fi
 
 # 检查当前 step 依赖的核心命令。
 require_cmd "$PYTHON_BIN"
-require_cmd antsRegistration
 require_cmd fslmaths
+if [[ "${PHASE1_LEADDBS_NATIVE_ENABLE:-0}" == "1" ]]; then
+  [[ -x "${MATLAB_BIN}" ]] || die "MATLAB executable is unavailable for native Lead-DBS: ${MATLAB_BIN:-unset}"
+else
+  require_cmd antsRegistration
+fi
 
 # 定义当前 step 的核心输入输出。
 STEP3_MANIFEST="${PHASE1_ANAT_STEP3_DIR}/manifest.tsv"
+T1_NATIVE="${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz"
 T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz"
+T2_NATIVE="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz"
 T2_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
 APARC_ASEG="${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz"
 MNI_BRAIN="${PHASE1_ANAT_STEP3_DIR}/mni2009b_brain.nii.gz"
@@ -39,6 +48,24 @@ STEP3_FORWARD_AFFINE=""
 STEP3_FORWARD_WARP=""
 STEP3_INVERSE_WARP=""
 STEP3_TRANSFORM_LAYOUT=""
+STEP3_REGISTRATION_ENGINE="antsRegistration"
+LEADDBS_NATIVE_DIR="${PHASE1_ANAT_STEP3_DIR}/leaddbs_native"
+LEADDBS_NATIVE_LOG="${PHASE1_ANAT_STEP3_DIR}/leaddbs_native.log"
+LEADDBS_NATIVE_SCRIPT="${LEADDBS_NATIVE_DIR}/run_leaddbs_native_step3.m"
+LEADDBS_SUBJECT_TOKEN="sub-${SUBJECT_KEY}"
+LEADDBS_COREG_ANAT_DIR="${LEADDBS_NATIVE_DIR}/coregistration/anat"
+LEADDBS_NORMALIZATION_DIR="${LEADDBS_NATIVE_DIR}/normalization"
+LEADDBS_NORMALIZATION_ANAT_DIR="${LEADDBS_NORMALIZATION_DIR}/anat"
+LEADDBS_NORMALIZATION_XFM_DIR="${LEADDBS_NORMALIZATION_DIR}/transformations"
+LEADDBS_NORMALIZATION_LOG_DIR="${LEADDBS_NORMALIZATION_DIR}/log"
+LEADDBS_METHOD_LOG="${LEADDBS_NATIVE_DIR}/log/${LEADDBS_SUBJECT_TOKEN}_desc-methods.txt"
+LEADDBS_T1_INPUT="${LEADDBS_COREG_ANAT_DIR}/${LEADDBS_SUBJECT_TOKEN}_ses-preop_space-anchorNative_desc-preproc_acq-iso_T1w.nii.gz"
+LEADDBS_T2_INPUT="${LEADDBS_COREG_ANAT_DIR}/${LEADDBS_SUBJECT_TOKEN}_ses-preop_space-anchorNative_desc-preproc_acq-iso_T2w.nii.gz"
+LEADDBS_NORM_T1="${LEADDBS_NORMALIZATION_ANAT_DIR}/${LEADDBS_SUBJECT_TOKEN}_ses-preop_space-MNI152NLin2009bAsym_desc-preproc_acq-iso_T1w.nii"
+LEADDBS_NATIVE_TO_MNI_WARP="${LEADDBS_NORMALIZATION_XFM_DIR}/${LEADDBS_SUBJECT_TOKEN}_from-anchorNative_to-MNI152NLin2009bAsym_desc-ants.nii.gz"
+LEADDBS_MNI_TO_NATIVE_WARP="${LEADDBS_NORMALIZATION_XFM_DIR}/${LEADDBS_SUBJECT_TOKEN}_from-MNI152NLin2009bAsym_to-anchorNative_desc-ants.nii.gz"
+LEADDBS_NORMMETHOD_JSON="${LEADDBS_NORMALIZATION_LOG_DIR}/${LEADDBS_SUBJECT_TOKEN}_desc-normmethod.json"
+LEADDBS_ANTSCMD_LOG="${LEADDBS_NORMALIZATION_LOG_DIR}/${LEADDBS_SUBJECT_TOKEN}_desc-antscmd.txt"
 
 STEP3_USE_T2="0"
 STEP3_REGISTRATION_MODE="single_t1_raw"
@@ -66,6 +93,10 @@ fi
 
 STEP3_USE_AFFINE="${PHASE1_REG_AFFINE_ENABLE:-1}"
 STEP3_AFFINE_REASON="config"
+STEP3_USE_LEADDBS_NATIVE="${PHASE1_LEADDBS_NATIVE_ENABLE:-0}"
+if [[ "${STEP3_USE_LEADDBS_NATIVE}" == "1" ]]; then
+  STEP3_REGISTRATION_ENGINE="leaddbs_native"
+fi
 
 resolve_step3_transform_outputs() {
   STEP3_FORWARD_AFFINE=""
@@ -97,7 +128,126 @@ resolve_step3_transform_outputs() {
   return 1
 }
 
+prepare_leaddbs_native_workspace() {
+  rm -rf "${LEADDBS_NATIVE_DIR}"
+  mkdir -p \
+    "${LEADDBS_COREG_ANAT_DIR}" \
+    "${LEADDBS_NORMALIZATION_ANAT_DIR}" \
+    "${LEADDBS_NORMALIZATION_XFM_DIR}" \
+    "${LEADDBS_NORMALIZATION_LOG_DIR}" \
+    "${LEADDBS_NATIVE_DIR}/log"
+  cp -f "${T1_NATIVE}" "${LEADDBS_T1_INPUT}"
+  if [[ "${STEP3_USE_T2}" == "1" ]]; then
+    cp -f "${T2_NATIVE}" "${LEADDBS_T2_INPUT}"
+  else
+    rm -f "${LEADDBS_T2_INPUT}"
+  fi
+}
+
+write_leaddbs_native_matlab_script() {
+  local use_t2="${STEP3_USE_T2}"
+  cat > "${LEADDBS_NATIVE_SCRIPT}" <<EOF
+restoredefaultpath;
+addpath('${SPM12_HOME}');
+addpath('${LEADDBS_HOME}');
+ea_setpath;
+
+subj = '${SUBJECT_KEY}';
+work = '${LEADDBS_NATIVE_DIR}';
+t1 = '${LEADDBS_T1_INPUT}';
+t1norm = '${LEADDBS_NORM_T1}';
+methodlog = '${LEADDBS_METHOD_LOG}';
+forwardbase = '${LEADDBS_NORMALIZATION_XFM_DIR}/${LEADDBS_SUBJECT_TOKEN}_from-anchorNative_to-MNI152NLin2009bAsym_desc-';
+inversebase = '${LEADDBS_NORMALIZATION_XFM_DIR}/${LEADDBS_SUBJECT_TOKEN}_from-MNI152NLin2009bAsym_to-anchorNative_desc-';
+normmethod = '${LEADDBS_NORMMETHOD_JSON}';
+logbase = '${LEADDBS_NORMALIZATION_LOG_DIR}/${LEADDBS_SUBJECT_TOKEN}_desc-norm';
+spacedef = ea_getspacedef;
+
+options = loadjson(fullfile('${LEADDBS_HOME}', 'common', 'uiprefs.json'));
+options = ea_resolve_elspec(options);
+options.prefs = ea_prefs(['sub-' subj]);
+options.bids = struct();
+options.bids.spacedef = spacedef;
+options.overwriteapproved = 1;
+options.normalize.do = 1;
+options.normalize.method = 'ANTs (Avants 2008)';
+options.leadprod = 'dbs';
+
+options.subj = struct();
+options.subj.subjId = subj;
+options.subj.subjDir = work;
+options.subj.methodLog = methodlog;
+options.subj.AnchorModality = 'T1w';
+options.subj.postopModality = 'None';
+options.subj.coregDir = fullfile(work, 'coregistration');
+options.subj.normDir = fullfile(work, 'normalization');
+options.subj.logDir = fullfile(work, 'log');
+options.subj.brainshiftDir = fullfile(work, 'brainshift');
+
+options.subj.preopAnat = struct();
+options.subj.preopAnat.T1w = struct( ...
+    'raw', t1, ...
+    'preproc', t1, ...
+    'coreg', t1, ...
+    'norm', t1norm ...
+);
+
+options.subj.coreg = struct();
+options.subj.coreg.anat = struct();
+options.subj.coreg.anat.preop = struct('T1w', t1);
+
+options.subj.norm = struct();
+options.subj.norm.anat = struct();
+options.subj.norm.anat.preop = struct('T1w', t1norm);
+options.subj.norm.transform = struct( ...
+    'forwardBaseName', forwardbase, ...
+    'inverseBaseName', inversebase ...
+);
+options.subj.norm.log = struct( ...
+    'method', normmethod, ...
+    'logBaseName', logbase ...
+);
+
+if strcmp('${use_t2}', '1')
+    t2 = '${LEADDBS_T2_INPUT}';
+    options.subj.preopAnat.T2w = struct( ...
+        'raw', t2, ...
+        'preproc', t2, ...
+        'coreg', t2 ...
+    );
+    options.subj.coreg.anat.preop.T2w = t2;
+end
+
+try
+    ea_normalize(options);
+catch ME
+    disp(getReport(ME, 'extended', 'hyperlinks', 'off'));
+    exit(1);
+end
+
+if ~(exist('${LEADDBS_NATIVE_TO_MNI_WARP}', 'file') == 2 && exist('${LEADDBS_MNI_TO_NATIVE_WARP}', 'file') == 2)
+    error('Lead-DBS native normalization finished without the expected transform outputs.');
+end
+exit(0);
+EOF
+}
+
+run_leaddbs_native_registration() {
+  prepare_leaddbs_native_workspace
+  write_leaddbs_native_matlab_script
+  "${MATLAB_BIN}" -batch "run('${LEADDBS_NATIVE_SCRIPT}');" >"${LEADDBS_NATIVE_LOG}" 2>&1
+  [[ -f "${LEADDBS_MNI_TO_NATIVE_WARP}" ]] || die "Missing Lead-DBS MNI->native warp: ${LEADDBS_MNI_TO_NATIVE_WARP}"
+  [[ -f "${LEADDBS_NATIVE_TO_MNI_WARP}" ]] || die "Missing Lead-DBS native->MNI warp: ${LEADDBS_NATIVE_TO_MNI_WARP}"
+
+  rm -f "${REG_AFFINE}"
+  cp -f "${LEADDBS_MNI_TO_NATIVE_WARP}" "${REG_WARP}"
+  cp -f "${LEADDBS_MNI_TO_NATIVE_WARP}" "${REG_ALT_WARP}"
+  cp -f "${LEADDBS_NATIVE_TO_MNI_WARP}" "${REG_INV_WARP}"
+  cp -f "${LEADDBS_NATIVE_TO_MNI_WARP}" "${REG_ALT_INV_WARP}"
+}
+
 step3_outputs_ready() {
+  local manifest_registration_engine=""
   local manifest_registration_mode=""
   local manifest_use_t2=""
   local manifest_mni_t2=""
@@ -117,6 +267,7 @@ step3_outputs_ready() {
   [[ -z "${STEP3_FORWARD_AFFINE}" || -f "${STEP3_FORWARD_AFFINE}" ]] || return 1
   [[ -z "${STEP3_INVERSE_WARP}" || -f "${STEP3_INVERSE_WARP}" ]] || return 1
   manifest_registration_mode="$(read_manifest_value "${STEP3_MANIFEST}" "registration_mode")"
+  manifest_registration_engine="$(read_manifest_value "${STEP3_MANIFEST}" "registration_engine")"
   manifest_use_t2="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_t2")"
   manifest_mni_t2="$(read_manifest_value "${STEP3_MANIFEST}" "mni_t2")"
   manifest_mask_mode="$(read_manifest_value "${STEP3_MANIFEST}" "registration_mask_mode")"
@@ -127,6 +278,7 @@ step3_outputs_ready() {
   manifest_forward_affine="$(read_manifest_value "${STEP3_MANIFEST}" "forward_affine")"
   manifest_forward_warp="$(read_manifest_value "${STEP3_MANIFEST}" "forward_warp")"
   manifest_inverse_warp="$(read_manifest_value "${STEP3_MANIFEST}" "inverse_warp")"
+  [[ "${manifest_registration_engine}" == "${STEP3_REGISTRATION_ENGINE}" ]] || return 1
   [[ "${manifest_registration_mode}" == "${STEP3_REGISTRATION_MODE}" ]] || return 1
   [[ "${manifest_use_t2:-0}" == "${STEP3_USE_T2}" ]] || return 1
   [[ "${manifest_use_affine:-1}" == "${STEP3_USE_AFFINE}" ]] || return 1
@@ -162,13 +314,16 @@ reset_step3_outputs() {
     "${REG_INV_WARP}" \
     "${REG_ALT_WARP}" \
     "${REG_ALT_INV_WARP}" \
-    "${PHASE1_ANAT_STEP3_DIR}/ants_syn.log"
+    "${PHASE1_ANAT_STEP3_DIR}/ants_syn.log" \
+    "${LEADDBS_NATIVE_LOG}"
+  rm -rf "${LEADDBS_NATIVE_DIR}"
 }
 
 # 输出当前 step 的开始日志。
 log "[phase1_anat] Step3 subcortical SyN for ${SUBJECT_ID}"
 
 if [[ -f "${STEP3_MANIFEST}" ]]; then
+  manifest_registration_engine="$(read_manifest_value "${STEP3_MANIFEST}" "registration_engine")"
   manifest_registration_mode="$(read_manifest_value "${STEP3_MANIFEST}" "registration_mode")"
   manifest_use_t2="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_t2")"
   manifest_mni_t2="$(read_manifest_value "${STEP3_MANIFEST}" "mni_t2")"
@@ -176,7 +331,7 @@ if [[ -f "${STEP3_MANIFEST}" ]]; then
   manifest_use_mask="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_mask")"
   manifest_mask_path="$(read_manifest_value "${STEP3_MANIFEST}" "mni_subcortical_mask")"
   manifest_use_affine="$(read_manifest_value "${STEP3_MANIFEST}" "registration_use_affine")"
-  if [[ "${manifest_registration_mode}" != "${STEP3_REGISTRATION_MODE}" || "${manifest_use_t2:-0}" != "${STEP3_USE_T2}" || "${manifest_mask_mode}" != "${STEP3_MASK_MODE}" || "${manifest_use_mask:-0}" != "${STEP3_USE_MASK}" || "${manifest_use_affine:-1}" != "${STEP3_USE_AFFINE}" ]]; then
+  if [[ "${manifest_registration_engine}" != "${STEP3_REGISTRATION_ENGINE}" || "${manifest_registration_mode}" != "${STEP3_REGISTRATION_MODE}" || "${manifest_use_t2:-0}" != "${STEP3_USE_T2}" || "${manifest_mask_mode}" != "${STEP3_MASK_MODE}" || "${manifest_use_mask:-0}" != "${STEP3_USE_MASK}" || "${manifest_use_affine:-1}" != "${STEP3_USE_AFFINE}" ]]; then
     reset_step3_outputs
   elif [[ "${STEP3_USE_T2}" == "1" && "${manifest_mni_t2}" != "${MNI_T2}" ]]; then
     reset_step3_outputs
@@ -244,74 +399,80 @@ fi
 
 # 用锁死参数的 SyN 把 MNI2009b 配准到个体原生 T1，优先守住深部核团区域。
 if ! resolve_step3_transform_outputs; then
-  MASK_ARGS=()
-  AFFINE_STAGE_ARGS=()
-  if [[ "${STEP3_USE_MASK}" == "1" ]]; then
-    # ANTs 的 mask 按 fixed,moving 顺序传入；这里 fixed 是 native T1/T2，moving 是 MNI 模板侧。
-    MASK_ARGS=(--masks "[${NATIVE_SUBCORTICAL_MASK},${MNI_SUBCORTICAL_MASK_NATIVE}]")
-  fi
-  if [[ "${STEP3_USE_AFFINE}" == "1" ]]; then
-    if [[ "${STEP3_USE_T2}" == "1" ]]; then
-      AFFINE_STAGE_ARGS=(
-        --transform Affine[0.1]
-        --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]"
-        --metric "MI[${T2_BRAIN},${MNI_T2_BRAIN},1,32,Regular,0.25]"
-        --convergence "[500x250x100,1e-6,10]"
-        --shrink-factors 8x4x2
-        --smoothing-sigmas 3x2x1vox
-      )
-    else
-      AFFINE_STAGE_ARGS=(
-        --transform Affine[0.1]
-        --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]"
-        --convergence "[500x250x100,1e-6,10]"
-        --shrink-factors 8x4x2
-        --smoothing-sigmas 3x2x1vox
-      )
-    fi
-  fi
-  if [[ "${STEP3_USE_T2}" == "1" ]]; then
-    antsRegistration \
-      --dimensionality 3 \
-      --float 0 \
-      --output "[${REG_PREFIX},${REG_PREFIX}1Warp.nii.gz,${REG_PREFIX}1InverseWarp.nii.gz]" \
-      --interpolation Linear \
-      --use-histogram-matching 0 \
-      --winsorize-image-intensities "[0.005,0.995]" \
-      "${MASK_ARGS[@]}" \
-      --transform Rigid[0.1] \
-      --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]" \
-      --metric "MI[${T2_BRAIN},${MNI_T2_BRAIN},1,32,Regular,0.25]" \
-      --convergence "[1000x500x250x100,1e-6,10]" \
-      --shrink-factors 8x4x2x1 \
-      --smoothing-sigmas 3x2x1x0vox \
-      "${AFFINE_STAGE_ARGS[@]}" \
-      --transform SyN[0.1,3,0] \
-      --metric "CC[${T1_BRAIN},${MNI_BRAIN},1,4]" \
-      --metric "CC[${T2_BRAIN},${MNI_T2_BRAIN},1,4]" \
-      --convergence "[100x70x50x20,1e-6,10]" \
-      --shrink-factors 8x4x2x1 \
-      --smoothing-sigmas 3x2x1x0vox >"${PHASE1_ANAT_STEP3_DIR}/ants_syn.log" 2>&1
+  if [[ "${STEP3_USE_LEADDBS_NATIVE}" == "1" ]]; then
+    # 原生 Lead-DBS 的 ANTs 正向定义是 native->MNI；这里把它回写成现有 step5/step6
+    # 一直在消费的 mni->native contract，因此下游不需要改 atlas 逆变换逻辑。
+    run_leaddbs_native_registration
   else
-    antsRegistration \
-      --dimensionality 3 \
-      --float 0 \
-      --output "[${REG_PREFIX},${REG_PREFIX}1Warp.nii.gz,${REG_PREFIX}1InverseWarp.nii.gz]" \
-      --interpolation Linear \
-      --use-histogram-matching 0 \
-      --winsorize-image-intensities "[0.005,0.995]" \
-      "${MASK_ARGS[@]}" \
-      --transform Rigid[0.1] \
-      --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]" \
-      --convergence "[1000x500x250x100,1e-6,10]" \
-      --shrink-factors 8x4x2x1 \
-      --smoothing-sigmas 3x2x1x0vox \
-      "${AFFINE_STAGE_ARGS[@]}" \
-      --transform SyN[0.1,3,0] \
-      --metric "CC[${T1_BRAIN},${MNI_BRAIN},1,4]" \
-      --convergence "[100x70x50x20,1e-6,10]" \
-      --shrink-factors 8x4x2x1 \
-      --smoothing-sigmas 3x2x1x0vox >"${PHASE1_ANAT_STEP3_DIR}/ants_syn.log" 2>&1
+    MASK_ARGS=()
+    AFFINE_STAGE_ARGS=()
+    if [[ "${STEP3_USE_MASK}" == "1" ]]; then
+      # ANTs 的 mask 按 fixed,moving 顺序传入；这里 fixed 是 native T1/T2，moving 是 MNI 模板侧。
+      MASK_ARGS=(--masks "[${NATIVE_SUBCORTICAL_MASK},${MNI_SUBCORTICAL_MASK_NATIVE}]")
+    fi
+    if [[ "${STEP3_USE_AFFINE}" == "1" ]]; then
+      if [[ "${STEP3_USE_T2}" == "1" ]]; then
+        AFFINE_STAGE_ARGS=(
+          --transform Affine[0.1]
+          --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]"
+          --metric "MI[${T2_BRAIN},${MNI_T2_BRAIN},1,32,Regular,0.25]"
+          --convergence "[500x250x100,1e-6,10]"
+          --shrink-factors 8x4x2
+          --smoothing-sigmas 3x2x1vox
+        )
+      else
+        AFFINE_STAGE_ARGS=(
+          --transform Affine[0.1]
+          --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]"
+          --convergence "[500x250x100,1e-6,10]"
+          --shrink-factors 8x4x2
+          --smoothing-sigmas 3x2x1vox
+        )
+      fi
+    fi
+    if [[ "${STEP3_USE_T2}" == "1" ]]; then
+      antsRegistration \
+        --dimensionality 3 \
+        --float 0 \
+        --output "[${REG_PREFIX},${REG_PREFIX}1Warp.nii.gz,${REG_PREFIX}1InverseWarp.nii.gz]" \
+        --interpolation Linear \
+        --use-histogram-matching 0 \
+        --winsorize-image-intensities "[0.005,0.995]" \
+        "${MASK_ARGS[@]}" \
+        --transform Rigid[0.1] \
+        --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]" \
+        --metric "MI[${T2_BRAIN},${MNI_T2_BRAIN},1,32,Regular,0.25]" \
+        --convergence "[1000x500x250x100,1e-6,10]" \
+        --shrink-factors 8x4x2x1 \
+        --smoothing-sigmas 3x2x1x0vox \
+        "${AFFINE_STAGE_ARGS[@]}" \
+        --transform SyN[0.1,3,0] \
+        --metric "CC[${T1_BRAIN},${MNI_BRAIN},1,4]" \
+        --metric "CC[${T2_BRAIN},${MNI_T2_BRAIN},1,4]" \
+        --convergence "[100x70x50x20,1e-6,10]" \
+        --shrink-factors 8x4x2x1 \
+        --smoothing-sigmas 3x2x1x0vox >"${PHASE1_ANAT_STEP3_DIR}/ants_syn.log" 2>&1
+    else
+      antsRegistration \
+        --dimensionality 3 \
+        --float 0 \
+        --output "[${REG_PREFIX},${REG_PREFIX}1Warp.nii.gz,${REG_PREFIX}1InverseWarp.nii.gz]" \
+        --interpolation Linear \
+        --use-histogram-matching 0 \
+        --winsorize-image-intensities "[0.005,0.995]" \
+        "${MASK_ARGS[@]}" \
+        --transform Rigid[0.1] \
+        --metric "MI[${T1_BRAIN},${MNI_BRAIN},1,32,Regular,0.25]" \
+        --convergence "[1000x500x250x100,1e-6,10]" \
+        --shrink-factors 8x4x2x1 \
+        --smoothing-sigmas 3x2x1x0vox \
+        "${AFFINE_STAGE_ARGS[@]}" \
+        --transform SyN[0.1,3,0] \
+        --metric "CC[${T1_BRAIN},${MNI_BRAIN},1,4]" \
+        --convergence "[100x70x50x20,1e-6,10]" \
+        --shrink-factors 8x4x2x1 \
+        --smoothing-sigmas 3x2x1x0vox >"${PHASE1_ANAT_STEP3_DIR}/ants_syn.log" 2>&1
+    fi
   fi
 fi
 
@@ -324,7 +485,7 @@ fi
 cat > "${STEP3_MANIFEST}" <<EOF
 key	value
 subject_id	${SUBJECT_ID}
-registration_engine	antsRegistration
+registration_engine	${STEP3_REGISTRATION_ENGINE}
 registration_mode	${STEP3_REGISTRATION_MODE}
 registration_use_t2	${STEP3_USE_T2}
 registration_reason	${STEP3_REGISTRATION_REASON}
@@ -350,6 +511,8 @@ transform_layout	${STEP3_TRANSFORM_LAYOUT}
 forward_affine	${STEP3_FORWARD_AFFINE}
 forward_warp	${STEP3_FORWARD_WARP}
 inverse_warp	${STEP3_INVERSE_WARP}
+leaddbs_native_dir	$( [[ "${STEP3_USE_LEADDBS_NATIVE}" == "1" ]] && echo "${LEADDBS_NATIVE_DIR}" || echo "" )
+leaddbs_native_log	$( [[ "${STEP3_USE_LEADDBS_NATIVE}" == "1" ]] && echo "${LEADDBS_NATIVE_LOG}" || echo "" )
 EOF
 
 # 把当前 step 的关键模板结果链接到 stepview，便于快速核对。

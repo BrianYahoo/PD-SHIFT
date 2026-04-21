@@ -621,4 +621,187 @@ PHASE1_SURFACE_PLOT_ENV=mri_env
   优先用 xvfb-run -a 调用 PHASE1_SURFACE_PLOT_MRI_PYTHON
   若机器没有 xvfb-run，则直接调用 PHASE1_SURFACE_PLOT_MRI_PYTHON
 ```
+
+## step8_eeg_leadfield
+
+代码入口：
+
+```text
+/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step8_eeg_leadfield.sh
+```
+
+### 输入
+
+```text
+${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz
+${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz
+${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz
+${ATLAS_DIR}/${SUBJECT_ID}_labels.tsv
+${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/
+${PHASE1_ANAT_STEP8_DIR}/simnibs/m2m_${SIMNIBS_SUBJECT_TAG}/eeg_positions/EEG10-10_UI_Jurak_2007.csv
+${PHASE1_EEG_CUSTOM_CAP_CSV}
+```
+
+T2 相关输入只在 `PHASE1_EEG_USE_T2=1` 且 Step1 已生成 `t2_coreg_t1.nii.gz` 时送给 `charm`。
+
+### 输出
+
+```text
+${PHASE1_ANAT_STEP8_DIR}/manifest.tsv
+${PHASE1_ANAT_STEP8_DIR}/logs/charm.log
+${PHASE1_ANAT_STEP8_DIR}/simnibs/m2m_${SIMNIBS_SUBJECT_TAG}/
+${PHASE1_ANAT_STEP8_DIR}/simnibs/${SIMNIBS_SUBJECT_TAG}.msh
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/eeg_cap.csv
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/fem/*leadfield*.hdf5
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/${SUBJECT_ID}_EEG_Leadfield_${PHASE1_EEG_ELECTRODE_COUNT}x68.csv
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/${SUBJECT_ID}_EEG_Leadfield_${PHASE1_EEG_ELECTRODE_COUNT}x88.csv
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/${SUBJECT_ID}_EEG_Leadfield_qc.tsv
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/logs/prepare_cap.log
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/logs/prepare_tdcs_leadfield.log
+${PHASE1_ANAT_STEP8_DIR}/leadfield/${PHASE1_EEG_ELECTRODE_COUNT}ch/${PHASE1_EEG_CAP_SOURCE}/logs/build_matrix.log
+```
+
+### 关键目录组织
+
+Step8 结果按：
+
+```text
+leadfield/<电极数>ch/<传感器来源>/
+```
+
+做分层管理。
+
+当前 `传感器来源` 允许：
+
+```text
+input
+standard_10_10
+standard_10_20
+```
+
+### 关键参数
+
+```text
+PHASE1_EEG_LEADFIELD_ENABLE
+PHASE1_EEG_USE_T2
+PHASE1_EEG_CHARM_USE_FS_DIR
+PHASE1_EEG_CAP_SOURCE
+PHASE1_EEG_CUSTOM_CAP_CSV
+PHASE1_EEG_ELECTRODE_COUNT
+PHASE1_EEG_REFERENCE_ELECTRODE
+PHASE1_EEG_TDCS_SUBSAMPLING
+PHASE1_EEG_LEADFIELD_FIELD
+SIMNIBS_ENV_HOME
+SIMNIBS_HOME
+SIMNIBS_PYTHON
+SIMNIBS_CHARM_CMD
+SIMNIBS_PREPARE_TDCS_LEADFIELD_CMD
+```
+
+### 执行逻辑
+
+1. 调用 `setup_tools_env` 建立 MRI/FSL/FreeSurfer 基础环境。
+2. 若 Step8 被启用，再调用 `setup_simnibs_env`，把 SimNIBS 命令和 Python 注入当前 shell。
+3. 以：
+
+```text
+SIMNIBS_SUBJECT_TAG="${SUBJECT_ID//-/_}_simnibs"
+```
+
+作为 SimNIBS 子项目名，在：
+
+```text
+${PHASE1_ANAT_STEP8_DIR}/simnibs/
+```
+
+下运行 `charm`。
+
+4. `charm` 参数核心：
+
+```text
+charm <SIMNIBS_SUBJECT_TAG> <t1_n4> [t2_coreg_t1] [--fs-dir <surfer_subject_dir>]
+```
+
+5. 从：
+
+```text
+${SIMNIBS_M2M_DIR}/eeg_positions/EEG10-10_UI_Jurak_2007.csv
+```
+
+或外部自定义 cap CSV 中整理出当前 variant 的 `eeg_cap.csv`。
+
+6. 调用：
+
+```text
+prepare_tdcs_leadfield <SIMNIBS_SUBJECT_TAG> <eeg_cap.csv> -o <fem_dir> [-s <subsampling>]
+```
+
+生成节点级 leadfield HDF5。
+
+7. 用 `build_eeg_leadfield_matrix.py`：
+   - 从 HDF5 中读取 ROI mesh 节点坐标和 `tdcs_leadfield`
+   - 从 `aparc+aseg` 体积中为中灰质节点采样 Desikan 标签
+   - 对 68 个皮层 ROI 做区域聚合
+   - 按最终 88 ROI `labels.tsv` 顺序补全皮层下零列
+   - 输出 `Nx68` / `Nx88` CSV 和 ROI 级 QC
+
+### 68 / 88 维矩阵约定
+
+- `Nx68`：
+  - 行 = EEG 电极
+  - 列 = 68 个 Desikan 皮层 ROI
+
+- `Nx88`：
+  - 行 = EEG 电极
+  - 列 = 最终 Hybrid Atlas 的 88 ROI 顺序
+  - 其中 20 个皮层下 ROI 当前直接补零
+
+### 聚合规则
+
+- 优先策略：对每个 Desikan 标签内落到中灰质 ROI mesh 的节点，求 normal-projected leadfield 的均值。
+- 退化策略：若某个皮层 ROI 没采到任何节点，则用 `aparc+aseg` 中该标签的体素质心，在 ROI mesh 上取最近节点补一个代表值。
+- 若 HDF5 中缺少可用三角面法向，则退化为向量模长均值，并在 QC 中写出 `reduction_mode=vector_magnitude`。
+
+### Manifest 关键字段
+
+```text
+subject_id
+status
+simnibs_subject_tag
+simnibs_root_dir
+simnibs_m2m_dir
+simnibs_head_mesh
+leadfield_variant_dir
+leadfield_cap_source
+leadfield_cap_csv
+leadfield_reference_electrode
+leadfield_electrode_count
+leadfield_field
+leadfield_subsampling
+leadfield_hdf5
+leadfield_qc_tsv
+leadfield_68_csv
+leadfield_88_csv
+leadfield_use_t2
+custom_cap_csv
+simnibs_python
+simnibs_charm_cmd
+simnibs_prepare_tdcs_leadfield_cmd
+```
+
+### 关键工具与用途
+
+```text
+SimNIBS charm
+  基于 T1 和可选 T2 生成个体化 5 层头模与头皮 EEG 位置
+
+SimNIBS prepare_tdcs_leadfield
+  计算中灰质表面的节点级 TDCS leadfield
+
+Python prepare_eeg_cap.py
+  从自定义或标准 10-10 / 10-20 cap CSV 中整理当前变体的电极列表
+
+Python build_eeg_leadfield_matrix.py
+  把 SimNIBS HDF5 节点级 leadfield 聚合成 68 / 88 ROI CSV
+```
 ```

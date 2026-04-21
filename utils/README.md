@@ -13,6 +13,9 @@
 - `phase1_anat/step7/`
   - `extract_t1t2_myelin_profiles.py`
   - `plot_fslr_scalar_surfaces.py`
+- `phase1_anat/step8/`
+  - `prepare_eeg_cap.py`
+  - `build_eeg_leadfield_matrix.py`
 - `phase1_anat/legacy/`
   - `merge_distal_hybrid_atlas.py`
 - `phase2_fmri/shared/`

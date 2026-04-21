@@ -71,8 +71,18 @@ if [[ "${PHASE1_T2_SURFER_ENABLE:-0}" == "1" && -f "${T2_COREG_T1}" ]]; then
   SURFER_T2_INPUT="${T2_COREG_T1}"
   SURFER_USE_T2="1"
 fi
+SURFER_USE_T2_EFFECTIVE="${SURFER_USE_T2}"
 SURFER_HIRES_EFFECTIVE="0"
 SURFER_HIRES_REASON="disabled"
+SURFER_T1_INPUT_EFFECTIVE="${T1_NATIVE_INPUT}"
+SURFER_T1_BRAIN_EFFECTIVE="${T1_BRAIN}"
+SURFER_T1_MASK_EFFECTIVE="${T1_MASK}"
+SURFER_T1_FS_XMASK_EFFECTIVE="${T1_FS_XMASK}"
+SURFER_T1_FS_BRAIN_EFFECTIVE="${T1_FS_BRAIN}"
+SURFER_T2_INPUT_EFFECTIVE="${SURFER_T2_INPUT}"
+SURFER_HIRES_INPUT_PREP_DIR="${PHASE1_ANAT_STEP2_DIR}/hires_input"
+SURFER_HIRES_INPUT_CROP_APPLIED="0"
+SURFER_HIRES_INPUT_CROP_BOUNDS=""
 if [[ "${SURFER_TYPE}" == "free" ]]; then
   if "${PYTHON_BIN}" - "${T1_NATIVE_INPUT}" <<'PY' >/dev/null 2>&1
 import sys
@@ -177,6 +187,75 @@ freesurfer_uses_v8_defaults() {
   grep -q -- "-synthstrip" "${SURFER_ENGINE_LOG}" || return 1
   grep -q -- "-synthseg" "${SURFER_ENGINE_LOG}" || return 1
   grep -q -- "-synthmorph" "${SURFER_ENGINE_LOG}" || return 1
+}
+
+freesurfer_t2_pial_refine_segfault() {
+  [[ "${SURFER_TYPE}" == "free" ]] || return 1
+  [[ "${SURFER_USE_T2_EFFECTIVE:-0}" == "1" ]] || return 1
+  [[ -f "${SURFER_ENGINE_LOG}" ]] || return 1
+  grep -q "Command terminated by signal 11" "${SURFER_ENGINE_LOG}" || return 1
+  grep -q "#@# Refine Pial Surfs w/ T2/FLAIR" "${SURFER_ENGINE_LOG}" || return 1
+  grep -q -- "--mmvol T2.mgz T2" "${SURFER_ENGINE_LOG}" || return 1
+}
+
+freesurfer_hires_fov_exceeds_limit() {
+  local image_path="${1:-}"
+  [[ -f "${image_path}" ]] || return 1
+  "${PYTHON_BIN}" - "${image_path}" <<'PY' >/dev/null 2>&1
+import sys
+import nibabel as nib
+
+img = nib.load(sys.argv[1])
+shape = img.shape[:3]
+zooms = img.header.get_zooms()[:3]
+fov = [float(shape[i]) * float(zooms[i]) for i in range(3)]
+raise SystemExit(0 if any(v > 256.0 + 1e-3 for v in fov) else 1)
+PY
+}
+
+prepare_freesurfer_hires_inputs_if_needed() {
+  local prep_output=""
+  local key=""
+  local value=""
+  SURFER_T1_INPUT_EFFECTIVE="${T1_NATIVE_INPUT}"
+  SURFER_T1_BRAIN_EFFECTIVE="${T1_BRAIN}"
+  SURFER_T1_MASK_EFFECTIVE="${T1_MASK}"
+  SURFER_T1_FS_XMASK_EFFECTIVE="${T1_FS_XMASK}"
+  SURFER_T1_FS_BRAIN_EFFECTIVE="${T1_FS_BRAIN}"
+  SURFER_T2_INPUT_EFFECTIVE="${SURFER_T2_INPUT}"
+  SURFER_HIRES_INPUT_CROP_APPLIED="0"
+  SURFER_HIRES_INPUT_CROP_BOUNDS=""
+
+  [[ "${SURFER_TYPE}" == "free" ]] || return 0
+  [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] || return 0
+  freesurfer_hires_fov_exceeds_limit "${T1_NATIVE_INPUT}" || return 0
+
+  mkdir -p "${SURFER_HIRES_INPUT_PREP_DIR}"
+  prep_output="$("${PYTHON_BIN}" "${UTILS_DIR}/phase1_anat/step2/prepare_freesurfer_hires_inputs.py" \
+    --t1 "${T1_NATIVE_INPUT}" \
+    --mask "${T1_MASK}" \
+    --brain "${T1_BRAIN}" \
+    --fs-brain "${T1_FS_BRAIN}" \
+    --xmask "${T1_FS_XMASK}" \
+    $( [[ "${SURFER_USE_T2_EFFECTIVE}" == "1" ]] && printf '%s %q' '--t2' "${SURFER_T2_INPUT}" ) \
+    --out-dir "${SURFER_HIRES_INPUT_PREP_DIR}")"
+
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      crop_applied) SURFER_HIRES_INPUT_CROP_APPLIED="${value}" ;;
+      crop_bounds) SURFER_HIRES_INPUT_CROP_BOUNDS="${value}" ;;
+      t1_path) SURFER_T1_INPUT_EFFECTIVE="${value}" ;;
+      brain_path) SURFER_T1_BRAIN_EFFECTIVE="${value}" ;;
+      fs_brain_path) SURFER_T1_FS_BRAIN_EFFECTIVE="${value}" ;;
+      mask_path) SURFER_T1_MASK_EFFECTIVE="${value}" ;;
+      xmask_path) SURFER_T1_FS_XMASK_EFFECTIVE="${value}" ;;
+      t2_path) SURFER_T2_INPUT_EFFECTIVE="${value}" ;;
+    esac
+  done <<< "${prep_output}"
+
+  if [[ "${SURFER_HIRES_INPUT_CROP_APPLIED}" == "1" ]]; then
+    log "[phase1_anat] Step2 cropped hires FreeSurfer input to stay within 256 mm FOV (${SURFER_HIRES_INPUT_CROP_BOUNDS})"
+  fi
 }
 
 aparc_native_ready() {
@@ -383,15 +462,16 @@ EOF
 }
 
 run_freesurfer() {
-  local fs_xmask="${T1_FS_XMASK}"
+  local fs_xmask="${SURFER_T1_FS_XMASK_EFFECTIVE}"
   local recon_args=()
-  local t2_coreg="${T2_COREG_T1}"
-  [[ -f "${fs_xmask}" ]] || fs_xmask="${T1_MASK}"
+  local t2_coreg="${SURFER_T2_INPUT_EFFECTIVE}"
+  local t1_input="${SURFER_T1_INPUT_EFFECTIVE}"
+  [[ -f "${fs_xmask}" ]] || fs_xmask="${SURFER_T1_MASK_EFFECTIVE}"
   if [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]]; then
     recon_args+=(-hires)
     log "[phase1_anat] Step2 enabling FreeSurfer -hires (${SURFER_HIRES_REASON})"
   fi
-  if [[ "${SURFER_USE_T2}" == "1" && -f "${t2_coreg}" ]]; then
+  if [[ "${SURFER_USE_T2_EFFECTIVE}" == "1" && -f "${t2_coreg}" ]]; then
     recon_args+=(-T2 "${t2_coreg}" -T2pial)
     log "[phase1_anat] Step2 injecting T2 volume into FreeSurfer for precise pial placement"
   fi
@@ -406,7 +486,7 @@ run_freesurfer() {
   if [[ -f "${SURFER_SUBJECT_DIR}/mri/orig/001.mgz" ]]; then
     recon-all -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}" >"${SURFER_ENGINE_LOG}" 2>&1
   else
-    recon-all -i "${T1_NATIVE_INPUT}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}" >"${SURFER_ENGINE_LOG}" 2>&1
+    recon-all -i "${t1_input}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}" >"${SURFER_ENGINE_LOG}" 2>&1
   fi
 }
 
@@ -544,6 +624,7 @@ if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
   if [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_engine_outputs_ready; then
     :
   else
+    prepare_freesurfer_hires_inputs_if_needed
     set +e
     if [[ "${SURFER_TYPE}" == "free" ]]; then
       run_freesurfer
@@ -564,6 +645,16 @@ if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
         recon_status=$?
         set -e
       fi
+    fi
+
+    if (( recon_status != 0 )) && freesurfer_t2_pial_refine_segfault; then
+      log "[phase1_anat] Step2 detected FreeSurfer T2 pial refinement crash, retrying without T2 for ${SUBJECT_ID}"
+      SURFER_USE_T2_EFFECTIVE="0"
+      reset_surfer_subject "t2 pial refinement crashed"
+      set +e
+      run_freesurfer
+      recon_status=$?
+      set -e
     fi
 
     if (( recon_status != 0 )) && [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_recoverable_segstats_failure; then
@@ -626,11 +717,17 @@ t1_freesurfer_brain	${T1_FS_BRAIN}
 surfer_subjects_dir	${SURFER_SUBJECTS_DIR}
 surfer_subject_dir	${SURFER_SUBJECT_DIR}
 surfer_engine_log	${SURFER_ENGINE_LOG}
-recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${T1_NATIVE_INPUT} -all -noskullstrip -xmask ${T1_FS_XMASK} -openmp ${NTHREADS}$( [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] && printf ' -hires' )$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' -T2 %s -T2pial' "${SURFER_T2_INPUT}" )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' --t2 %s --reg_mode none' "${SURFER_T2_INPUT}" )" )
+recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${SURFER_T1_INPUT_EFFECTIVE} -all -noskullstrip -xmask ${SURFER_T1_FS_XMASK_EFFECTIVE} -openmp ${NTHREADS}$( [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] && printf ' -hires' )$( [[ "${SURFER_USE_T2_EFFECTIVE}" == "1" ]] && printf ' -T2 %s -T2pial' "${SURFER_T2_INPUT_EFFECTIVE}" )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' --t2 %s --reg_mode none' "${SURFER_T2_INPUT}" )" )
 surfer_hires	${SURFER_HIRES_EFFECTIVE:-0}
 surfer_hires_reason	${SURFER_HIRES_REASON}
 surfer_use_t2	${SURFER_USE_T2}
+surfer_use_t2_effective	${SURFER_USE_T2_EFFECTIVE}
 surfer_t2_input	${SURFER_T2_INPUT}
+surfer_t1_input_effective	${SURFER_T1_INPUT_EFFECTIVE}
+surfer_t2_input_effective	${SURFER_T2_INPUT_EFFECTIVE}
+surfer_xmask_effective	${SURFER_T1_FS_XMASK_EFFECTIVE}
+surfer_hires_input_crop_applied	${SURFER_HIRES_INPUT_CROP_APPLIED}
+surfer_hires_input_crop_bounds	${SURFER_HIRES_INPUT_CROP_BOUNDS}
 fastsurfer_vox_size	${PHASE1_FASTSURFER_VOX_SIZE:-min}
 fastsurfer_desikan_repair_enabled	${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}
 t1_resample_voxel_size_mm	${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}

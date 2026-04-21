@@ -13,6 +13,7 @@
 5. `step5_save_inverse_warp`
 6. `step6_distal_inverse_fusion`
 7. `step7_t1t2_myelin`
+8. `step8_eeg_leadfield`
 
 ## step1_brain_extract
 
@@ -228,3 +229,63 @@
 - Connectome Workbench `wb_command`
 - Python `extract_t1t2_myelin_profiles.py`
 - Python `plot_fslr_scalar_surfaces.py`（基于 `surfplot`、`BrainSpace`、`PyVista`、`VTK`）
+
+## step8_eeg_leadfield
+
+功能：
+
+- 用 SimNIBS `charm` 基于 T1 和可选 T2 构建个体化 5 层头模。
+- 根据配置选择自定义 EEG cap 或标准 10-10 / 10-20 电极系统，并整理成 SimNIBS 可直接读取的 CSV。
+- 调用 `prepare_tdcs_leadfield` 计算中灰质表面的电场 leadfield。
+- 把中灰质节点级 leadfield 按 `aparc+aseg` 的 68 个 Desikan 皮层标签做 ROI 聚合。
+- 额外按最终 88 ROI `labels.tsv` 顺序补全皮层下零列，输出可直接并入现有 Hybrid Atlas 顺序的 `Nx88` 矩阵。
+
+概念输入：
+
+- native `t1_n4`
+- 可选 `t2_coreg_t1`
+- native `aparc+aseg`
+- 最终 88 ROI `labels.tsv`
+- 现有 FreeSurfer / FastSurfer subject 目录
+
+概念输出：
+
+- SimNIBS `m2m_*` 目录和头模网格
+- 按 `电极数 / 传感器来源` 分类的 EEG cap CSV
+- 个体化 `EEG_Leadfield_<Nx68>.csv`
+- 个体化 `EEG_Leadfield_<Nx88>.csv`
+- ROI 聚合 QC 表
+
+关键参数：
+
+- `PHASE1_EEG_LEADFIELD_ENABLE`
+- `PHASE1_EEG_USE_T2`
+- `PHASE1_EEG_CHARM_USE_FS_DIR`
+- `PHASE1_EEG_CAP_SOURCE`
+- `PHASE1_EEG_CUSTOM_CAP_CSV`
+- `PHASE1_EEG_ELECTRODE_COUNT`
+- `PHASE1_EEG_REFERENCE_ELECTRODE`
+- `PHASE1_EEG_TDCS_SUBSAMPLING`
+- `PHASE1_EEG_LEADFIELD_FIELD`
+- `SIMNIBS_ENV_HOME`
+- `SIMNIBS_HOME`
+- `SIMNIBS_PYTHON`
+- `SIMNIBS_CHARM_CMD`
+- `SIMNIBS_PREPARE_TDCS_LEADFIELD_CMD`
+
+实现细节：
+
+- 默认不在主流程中自动开启，避免没有安装 SimNIBS 的机器直接在 phase1 末尾失败。
+- 若 `PHASE1_EEG_USE_T2=1` 且 T2 已在 Step1 刚体配准到 T1，则 `charm` 走 T1+T2；否则只使用 T1。
+- 若 `PHASE1_EEG_CHARM_USE_FS_DIR=1`，则 `charm` 优先复用现有 FreeSurfer / FastSurfer 表面目录。
+- 标准电极模式目前内置支持：
+  - `standard_10_10`: 32 / 64 通道
+  - `standard_10_20`: 21 / 32 通道
+- ROI 聚合优先使用中灰质节点落入 `aparc+aseg` 标签后的均值；若某个皮层 ROI 没有采样到节点，则回退到该标签体素质心附近最近节点。
+
+工具：
+
+- SimNIBS `charm`
+- SimNIBS `prepare_tdcs_leadfield`
+- Python `prepare_eeg_cap.py`
+- Python `build_eeg_leadfield_matrix.py`

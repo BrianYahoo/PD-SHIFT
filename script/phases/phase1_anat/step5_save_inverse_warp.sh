@@ -20,12 +20,20 @@ STEP5_SOURCE_AFFINE=""
 STEP5_SOURCE_WARP=""
 STEP5_SOURCE_INV_WARP=""
 STEP5_TRANSFORM_LAYOUT=""
+STEP5_SOURCE_STEP3_ENGINE=""
+STEP5_SOURCE_STEP3_MANIFEST_MTIME=""
 
 resolve_step5_transform_inputs() {
   STEP5_SOURCE_AFFINE=""
   STEP5_SOURCE_WARP=""
   STEP5_SOURCE_INV_WARP=""
   STEP5_TRANSFORM_LAYOUT="$(read_manifest_value "${STEP3_MANIFEST}" "transform_layout")"
+  STEP5_SOURCE_STEP3_ENGINE="$(read_manifest_value "${STEP3_MANIFEST}" "registration_engine")"
+  if [[ -f "${STEP3_MANIFEST}" ]]; then
+    STEP5_SOURCE_STEP3_MANIFEST_MTIME="$(stat -c '%Y' "${STEP3_MANIFEST}")"
+  else
+    STEP5_SOURCE_STEP3_MANIFEST_MTIME=""
+  fi
 
   if [[ -f "${STEP3_MANIFEST}" ]]; then
     STEP5_SOURCE_AFFINE="$(read_manifest_value "${STEP3_MANIFEST}" "forward_affine")"
@@ -61,6 +69,21 @@ resolve_step5_transform_inputs() {
   fi
 }
 
+step5_outputs_ready() {
+  local manifest_transform_layout=""
+  local manifest_source_step3_engine=""
+  local manifest_source_step3_manifest_mtime=""
+  [[ -f "${STEP5_MANIFEST}" && -f "${SAVE_WARP}" ]] || return 1
+  [[ -z "${STEP5_SOURCE_AFFINE}" || -f "${SAVE_AFFINE}" ]] || return 1
+  [[ -z "${STEP5_SOURCE_INV_WARP}" || -f "${SAVE_INV_WARP}" ]] || return 1
+  manifest_transform_layout="$(read_manifest_value "${STEP5_MANIFEST}" "transform_layout")"
+  manifest_source_step3_engine="$(read_manifest_value "${STEP5_MANIFEST}" "source_step3_engine")"
+  manifest_source_step3_manifest_mtime="$(read_manifest_value "${STEP5_MANIFEST}" "source_step3_manifest_mtime")"
+  [[ "${manifest_transform_layout}" == "${STEP5_TRANSFORM_LAYOUT}" ]] || return 1
+  [[ "${manifest_source_step3_engine}" == "${STEP5_SOURCE_STEP3_ENGINE}" ]] || return 1
+  [[ "${manifest_source_step3_manifest_mtime}" == "${STEP5_SOURCE_STEP3_MANIFEST_MTIME}" ]] || return 1
+}
+
 # 输出当前 step 的开始日志。
 log "[phase1_anat] Step5 save inverse warp for ${SUBJECT_ID}"
 
@@ -70,7 +93,7 @@ resolve_step5_transform_inputs
 [[ -z "${STEP5_SOURCE_INV_WARP}" || -f "${STEP5_SOURCE_INV_WARP}" ]] || die "Missing step3 inverse warp: ${STEP5_SOURCE_INV_WARP}"
 
 # 如果当前 step 的主要结果都已存在，则直接跳过。
-if [[ -f "${STEP5_MANIFEST}" && -f "${SAVE_WARP}" && ( -z "${STEP5_SOURCE_AFFINE}" || -f "${SAVE_AFFINE}" ) && ( -z "${STEP5_SOURCE_INV_WARP}" || -f "${SAVE_INV_WARP}" ) ]]; then
+if step5_outputs_ready; then
   log "[phase1_anat] Step5 already done for ${SUBJECT_ID}"
   exit 0
 fi
@@ -93,6 +116,8 @@ cat > "${STEP5_MANIFEST}" <<EOF
 key	value
 subject_id	${SUBJECT_ID}
 transform_layout	${STEP5_TRANSFORM_LAYOUT}
+source_step3_engine	${STEP5_SOURCE_STEP3_ENGINE}
+source_step3_manifest_mtime	${STEP5_SOURCE_STEP3_MANIFEST_MTIME}
 forward_affine	$( [[ -n "${STEP5_SOURCE_AFFINE}" ]] && echo "${SAVE_AFFINE}" || echo "" )
 forward_warp	${SAVE_WARP}
 inverse_warp	$( [[ -n "${STEP5_SOURCE_INV_WARP}" ]] && echo "${SAVE_INV_WARP}" || echo "" )

@@ -81,7 +81,7 @@ import nibabel as nib
 img = nib.load(sys.argv[1])
 target = float(sys.argv[2])
 zooms = [float(z) for z in img.header.get_zooms()[:3]]
-needs = any(abs(z - target) >= 1e-3 for z in zooms)
+needs = any(z < (target - 1e-3) for z in zooms)
 raise SystemExit(0 if needs else 1)
 PY
 }
@@ -175,10 +175,26 @@ PY
     local target_voxel_size="${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}"
     local manifest_target_voxel_size=""
     local t1_resampled_flag=""
+    local manifest_t1_zooms=""
     manifest_target_voxel_size="$(awk -F '\t' '$1=="t1_resample_voxel_size_mm"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
     t1_resampled_flag="$(awk -F '\t' '$1=="t1_resampled_status"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
+    manifest_t1_zooms="$(awk -F '\t' '$1=="t1_original_zooms_mm"{print $2}' "$PHASE0_STEP1_MANIFEST" 2>/dev/null || true)"
     if [[ -n "$manifest_target_voxel_size" && "$manifest_target_voxel_size" != "$target_voxel_size" ]]; then
       return 1
+    fi
+    if [[ -n "$manifest_t1_zooms" ]]; then
+      if "${PYTHON_BIN}" - "${manifest_t1_zooms}" "${target_voxel_size}" <<'PY' >/dev/null 2>&1
+import sys
+zooms = [float(x) for x in sys.argv[1].split(",") if x.strip()]
+target = float(sys.argv[2])
+needs = any(z < (target - 1e-3) for z in zooms)
+raise SystemExit(0 if needs else 1)
+PY
+      then
+        [[ "$t1_resampled_flag" == "1" ]] || return 1
+      else
+        [[ "${t1_resampled_flag:-0}" == "0" ]] || return 1
+      fi
     fi
     if [[ "$t1_resampled_flag" == "1" ]]; then
       image_is_target_resolution "${INIT_STEP0_DIR}/t1.nii.gz" "$target_voxel_size" || return 1
@@ -376,6 +392,47 @@ parkinson_series_stem() {
   echo "$series_name"
 }
 
+parkinson_name_matches_any_pattern() {
+  local series_name="$1"
+  shift || true
+  local pattern=""
+  shopt -s nocasematch
+  for pattern in "$@"; do
+    [[ -n "$pattern" ]] || continue
+    if [[ "$series_name" == $pattern ]]; then
+      shopt -u nocasematch
+      return 0
+    fi
+  done
+  shopt -u nocasematch
+  return 1
+}
+
+filter_parkinson_dirs_by_patterns() {
+  local include_raw="${1:-}"
+  local exclude_raw="${2:-}"
+  shift 2 || true
+  local candidate_dir=""
+  local candidate_name=""
+  local -a include_patterns=()
+  local -a exclude_patterns=()
+
+  mapfile -t include_patterns < <(split_semicolon_list "${include_raw}")
+  mapfile -t exclude_patterns < <(split_semicolon_list "${exclude_raw}")
+
+  for candidate_dir in "$@"; do
+    [[ -d "$candidate_dir" ]] || continue
+    candidate_name="$(parkinson_series_basename "$candidate_dir")"
+    if (( ${#include_patterns[@]} > 0 )) && ! parkinson_name_matches_any_pattern "$candidate_name" "${include_patterns[@]}"; then
+      continue
+    fi
+    if (( ${#exclude_patterns[@]} > 0 )) && parkinson_name_matches_any_pattern "$candidate_name" "${exclude_patterns[@]}"; then
+      continue
+    fi
+    printf '%s\n' "$candidate_dir"
+  done
+}
+
 parkinson_series_time_token() {
   local series_name="$1"
   if [[ "$series_name" =~ _([0-9]{6})_[0-9]+$ ]]; then
@@ -420,6 +477,36 @@ pick_parkinson_series_dir() {
     shift
   done
   return 0
+}
+
+pick_configured_parkinson_t1_dir() {
+  local -a all_dirs=()
+  local -a filtered_dirs=()
+  local dir=""
+  local priority_idx=""
+  local include_var=""
+  local exclude_var=""
+  local include_raw=""
+  local exclude_raw=""
+
+  mapfile -d '' -t all_dirs < <(find "$SUBJECT_DIR" -mindepth 1 -maxdepth 1 -type d -print0)
+  (( ${#all_dirs[@]} > 0 )) || return 0
+
+  for priority_idx in 1 2 3; do
+    include_var="INIT_T1_PRIORITY_${priority_idx}_PATTERNS"
+    exclude_var="INIT_T1_PRIORITY_${priority_idx}_EXCLUDE_PATTERNS"
+    include_raw="${!include_var:-}"
+    exclude_raw="${!exclude_var:-}"
+    [[ -n "${include_raw}" ]] || continue
+    mapfile -t filtered_dirs < <(filter_parkinson_dirs_by_patterns "${include_raw}" "${exclude_raw}" "${all_dirs[@]}")
+    dir="$(pick_earliest_parkinson_dir "${filtered_dirs[@]}")"
+    if [[ -n "$dir" ]]; then
+      echo "$dir"
+      return 0
+    fi
+  done
+
+  pick_parkinson_series_dir 't1_*' 'T1_*' 'mprage*'
 }
 
 pick_configured_parkinson_t2_dir() {
@@ -752,7 +839,7 @@ import_parkinson_phase0_step1() {
 
   require_cmd dcm2niix
 
-  t1_dicom_dir="$(pick_parkinson_series_dir 't1_*' 'T1_*' 'mprage*')"
+  t1_dicom_dir="$(pick_configured_parkinson_t1_dir)"
   t2_dicom_dir="$(pick_configured_parkinson_t2_dir)"
   dwi_dicom_dir="$(pick_parkinson_series_dir 'dMRI*' 'dwi*')"
   mapfile -t REST_MAIN_DIRS < <(collect_parkinson_rest_main_dirs)

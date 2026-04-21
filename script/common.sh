@@ -206,7 +206,23 @@ load_dataset_config() {
   : "${PHASE1_SURFACE_PLOT_ENV:=osmesa}"
   : "${PHASE1_SURFACE_PLOT_MRI_PYTHON:=}"
   : "${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:=/data/bryang/project/CNS/tools/surfplot_osmesa_env/bin/python}"
+  : "${PHASE1_EEG_LEADFIELD_ENABLE:=0}"
+  : "${PHASE1_EEG_USE_T2:=${PHASE1_T2_COREG_ENABLE}}"
+  : "${PHASE1_EEG_CHARM_USE_FS_DIR:=1}"
+  : "${PHASE1_EEG_CHARM_FORCE_AFFINE:=auto}"
+  : "${PHASE1_EEG_CAP_SOURCE:=standard_10_10}"
+  : "${PHASE1_EEG_CUSTOM_CAP_CSV:=}"
+  : "${PHASE1_EEG_ELECTRODE_COUNT:=64}"
+  : "${PHASE1_EEG_REFERENCE_ELECTRODE:=Cz}"
+  : "${PHASE1_EEG_TDCS_SUBSAMPLING:=40000}"
+  : "${PHASE1_EEG_LEADFIELD_FIELD:=E}"
+  : "${SIMNIBS_ENV_HOME:=/data/bryang/project/CNS/tools/simnibs/simnibs_env}"
+  : "${SIMNIBS_HOME:=/data/bryang/project/CNS/tools/simnibs}"
+  : "${SIMNIBS_PYTHON:=}"
+  : "${SIMNIBS_CHARM_CMD:=charm}"
+  : "${SIMNIBS_PREPARE_TDCS_LEADFIELD_CMD:=prepare_tdcs_leadfield}"
   : "${PHASE1_REG_AFFINE_ENABLE:=1}"
+  : "${PHASE1_LEADDBS_NATIVE_ENABLE:=0}"
   : "${PHASE1_FREESURFER_NO_V8:=0}"
   : "${PHASE1_FREESURFER_V8_GUARD:=0}"
   : "${PHASE1_FREESURFER_CORTEX_LABEL_ARGS:=}"
@@ -224,6 +240,31 @@ load_dataset_config() {
   : "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:=41,42,43,44,45,46,87,88}"
   : "${MNI_T2:=}"
   : "${MNI_SUBCORTICAL_MASK:=}"
+  : "${LEADDBS_HOME:=/data/bryang/project/CNS/tools/leaddbs}"
+  : "${MATLAB_HOME:=/data/bryang/project/CNS/tools/MATLAB}"
+  : "${SPM12_HOME:=/data/bryang/project/CNS/tools/spm12-main}"
+  : "${MATLAB_BIN:=}"
+  if [[ -n "${PIPELINE_PHASE1_EEG_LEADFIELD_ENABLE:-}" ]]; then
+    PHASE1_EEG_LEADFIELD_ENABLE="${PIPELINE_PHASE1_EEG_LEADFIELD_ENABLE}"
+  fi
+  if [[ -n "${PIPELINE_PHASE1_EEG_CAP_SOURCE:-}" ]]; then
+    PHASE1_EEG_CAP_SOURCE="${PIPELINE_PHASE1_EEG_CAP_SOURCE}"
+  fi
+  if [[ -n "${PIPELINE_PHASE1_EEG_CUSTOM_CAP_CSV:-}" ]]; then
+    PHASE1_EEG_CUSTOM_CAP_CSV="${PIPELINE_PHASE1_EEG_CUSTOM_CAP_CSV}"
+  fi
+  if [[ -n "${PIPELINE_PHASE1_EEG_ELECTRODE_COUNT:-}" ]]; then
+    PHASE1_EEG_ELECTRODE_COUNT="${PIPELINE_PHASE1_EEG_ELECTRODE_COUNT}"
+  fi
+  if [[ -n "${PIPELINE_SIMNIBS_ENV_HOME:-}" ]]; then
+    SIMNIBS_ENV_HOME="${PIPELINE_SIMNIBS_ENV_HOME}"
+  fi
+  if [[ -n "${PIPELINE_SIMNIBS_HOME:-}" ]]; then
+    SIMNIBS_HOME="${PIPELINE_SIMNIBS_HOME}"
+  fi
+  if [[ -n "${PIPELINE_PHASE1_LEADDBS_NATIVE_ENABLE:-}" ]]; then
+    PHASE1_LEADDBS_NATIVE_ENABLE="${PIPELINE_PHASE1_LEADDBS_NATIVE_ENABLE}"
+  fi
   if [[ "${FASTSURFER_USE_CUDA}" == "1" ]]; then
     FASTSURFER_DEVICE="cuda"
     FASTSURFER_VIEWAGG_DEVICE="cuda"
@@ -337,6 +378,7 @@ load_config() {
   PHASE1_ANAT_STEP5_DIR="${PHASE1_ANAT_DIR}/step5_save_inverse_warp"
   PHASE1_ANAT_STEP6_DIR="${PHASE1_ANAT_DIR}/step6_distal_inverse_fusion"
   PHASE1_ANAT_STEP7_DIR="${PHASE1_ANAT_DIR}/step7_t1t2_myelin"
+  PHASE1_ANAT_STEP8_DIR="${PHASE1_ANAT_DIR}/step8_eeg_leadfield"
   PHASE1_ANAT_VIS_DIR="${SUBJECT_VIS_ROOT}/phase1_anat"
   PHASE1_ANAT_STEPVIEW_DIR="${PHASE1_ANAT_VIS_DIR}/stepview"
   ATLAS_DIR="${PHASE1_ANAT_DIR}/atlas"
@@ -379,6 +421,7 @@ load_config() {
     "${PHASE1_ANAT_STEP5_DIR}" \
     "${PHASE1_ANAT_STEP6_DIR}" \
     "${PHASE1_ANAT_STEP7_DIR}" \
+    "${PHASE1_ANAT_STEP8_DIR}" \
     "${PHASE1_ANAT_VIS_DIR}" \
     "${PHASE1_ANAT_STEPVIEW_DIR}" \
     "${ATLAS_DIR}" \
@@ -643,6 +686,60 @@ setup_tools_env() {
   require_cmd applywarp
   require_cmd flirt
   require_cmd fslmaths
+}
+
+setup_simnibs_env() {
+  local conda_sh="/home/bryang/miniconda3/etc/profile.d/conda.sh"
+  local simnibs_env="${SIMNIBS_ENV_HOME:-}"
+  local simnibs_home="${SIMNIBS_HOME:-}"
+
+  if [[ -n "${simnibs_env}" && -d "${simnibs_env}" ]]; then
+    [[ -f "${conda_sh}" ]] || die "Missing conda setup for SimNIBS: ${conda_sh}"
+    # shellcheck disable=SC1091
+    source "${conda_sh}"
+    conda activate "${simnibs_env}"
+    export SIMNIBS_PYTHON_BIN="${SIMNIBS_PYTHON:-${CONDA_PREFIX}/bin/python}"
+  else
+    if [[ -n "${simnibs_home}" && -d "${simnibs_home}/bin" ]]; then
+      export PATH="${simnibs_home}/bin:${PATH}"
+    fi
+    export SIMNIBS_PYTHON_BIN="${SIMNIBS_PYTHON:-$(command -v simnibs_python || true)}"
+  fi
+
+  if [[ -n "${simnibs_home}" && -d "${simnibs_home}/bin" ]]; then
+    export PATH="${simnibs_home}/bin:${PATH}"
+  fi
+
+  if [[ -n "${SIMNIBS_PYTHON_BIN:-}" && ! -x "${SIMNIBS_PYTHON_BIN}" ]]; then
+    SIMNIBS_PYTHON_BIN="$(command -v "${SIMNIBS_PYTHON_BIN}" 2>/dev/null || true)"
+  fi
+  [[ -n "${SIMNIBS_PYTHON_BIN:-}" ]] || die "SimNIBS python is unavailable. Set SIMNIBS_ENV_HOME, SIMNIBS_HOME or SIMNIBS_PYTHON."
+
+  require_cmd "${SIMNIBS_CHARM_CMD}"
+  require_cmd "${SIMNIBS_PREPARE_TDCS_LEADFIELD_CMD}"
+}
+
+setup_leaddbs_env() {
+  local leaddbs_home="${LEADDBS_HOME:-/data/bryang/project/CNS/tools/leaddbs}"
+  local matlab_home="${MATLAB_HOME:-/data/bryang/project/CNS/tools/MATLAB}"
+  local spm12_home="${SPM12_HOME:-/data/bryang/project/CNS/tools/spm12-main}"
+  local matlab_bin="${MATLAB_BIN:-}"
+
+  [[ -d "${leaddbs_home}" ]] || die "Missing Lead-DBS: ${leaddbs_home}"
+  [[ -f "${leaddbs_home}/ea_normalize.m" ]] || die "Lead-DBS normalization entrypoint missing: ${leaddbs_home}/ea_normalize.m"
+  [[ -d "${matlab_home}" ]] || die "Missing MATLAB: ${matlab_home}"
+  [[ -d "${spm12_home}" ]] || die "Missing SPM12: ${spm12_home}"
+  [[ -f "${spm12_home}/spm_vol.m" ]] || die "Missing SPM12 function: ${spm12_home}/spm_vol.m"
+
+  if [[ -z "${matlab_bin}" ]]; then
+    matlab_bin="${matlab_home}/bin/matlab"
+  fi
+  [[ -x "${matlab_bin}" ]] || die "Missing MATLAB executable: ${matlab_bin}"
+
+  export LEADDBS_HOME="${leaddbs_home}"
+  export MATLAB_HOME="${matlab_home}"
+  export SPM12_HOME="${spm12_home}"
+  export MATLAB_BIN="${matlab_bin}"
 }
 
 write_minimal_json() {
