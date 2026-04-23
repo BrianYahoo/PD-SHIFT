@@ -3,8 +3,8 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase0_init.sh
-/data/bryang/project/CNS/pipeline/script/phases/phase0_init/step1_bids_standardize.sh
+/data/bryang/project/pipeline/script/phases/phase0_init.sh
+/data/bryang/project/pipeline/script/phases/phase0_init/step1_bids_standardize.sh
 ```
 
 当前 phase 只有一个真实 step：
@@ -20,9 +20,9 @@ ${PHASE0_INIT_DIR}/step1_bids_standardize
 配置文件：
 
 ```text
-/data/bryang/project/CNS/pipeline/config/pipeline.env
-/data/bryang/project/CNS/pipeline/config/datasets/hcp.env
-/data/bryang/project/CNS/pipeline/config/datasets/parkinson.env
+/data/bryang/project/pipeline/config/pipeline.env
+/data/bryang/project/pipeline/config/datasets/hcp.env
+/data/bryang/project/pipeline/config/datasets/parkinson.env
 ```
 
 HCP 原始输入模式：

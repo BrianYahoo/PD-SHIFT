@@ -36,7 +36,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-PIPELINE_ENV = Path("/data/bryang/project/CNS/pipeline/config/pipeline.env")
+PIPELINE_ENV = Path("/data/bryang/project/pipeline/config/pipeline.env")
 
 
 def parse_args():
@@ -45,8 +45,8 @@ def parse_args():
         "--roots",
         nargs="+",
         default=[
-            "/data/bryang/project/CNS/data/HCP/workspace",
-            "/data/bryang/project/CNS/data/Parkinson/workspace",
+            "/data/bryang/project/data/HCP/workspace",
+            "/data/bryang/project/data/Parkinson/workspace",
         ],
     )
     return parser.parse_args()

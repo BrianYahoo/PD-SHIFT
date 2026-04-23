@@ -3,8 +3,8 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase4_summary.sh
-/data/bryang/project/CNS/pipeline/script/phases/phase4_summary/step*.sh
+/data/bryang/project/pipeline/script/phases/phase4_summary.sh
+/data/bryang/project/pipeline/script/phases/phase4_summary/step*.sh
 ```
 
 summary 目录：
@@ -156,7 +156,7 @@ ${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_sift2_invnodevol.csv
 ${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count.csv
 ${FINAL_DIR}/${SUBJECT_ID}_DTI_connectome_count_invnodevol.csv
 ${FINAL_DIR}/func/fmri_trials.tsv
-${FC_REFERENCE_ROOT}
+${FC_REFERENCE_ROOT}（默认：`/data/bryang/project/download/data/ssh/preprocessed`）
 ${SC_REFERENCE_ROOT}
 ```
 

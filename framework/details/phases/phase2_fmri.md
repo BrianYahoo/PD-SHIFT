@@ -3,8 +3,8 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase2_fmri.sh
-/data/bryang/project/CNS/pipeline/script/phases/phase2_fmri/step*.sh
+/data/bryang/project/pipeline/script/phases/phase2_fmri.sh
+/data/bryang/project/pipeline/script/phases/phase2_fmri/step*.sh
 ```
 
 trial 变量：

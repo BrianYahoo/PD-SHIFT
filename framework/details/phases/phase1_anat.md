@@ -3,7 +3,7 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat.sh
 ```
 
 固定 step：
@@ -21,7 +21,7 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step1_brain_extract.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step1_brain_extract.sh
 ```
 
 ### 输入
@@ -93,7 +93,7 @@ FreeSurfer mri_synthstrip
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step2_surfer_recon.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step2_surfer_recon.sh
 ```
 
 ### 输入
@@ -225,7 +225,7 @@ aparc_aseg
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step3_subcortical_syn.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step3_subcortical_syn.sh
 ```
 
 ### 输入
@@ -240,8 +240,8 @@ ${MNI_T2}
 ${MNI_SUBCORTICAL_MASK}
 ${DISTAL_ATLAS_DIR}
 ${SN_ATLAS_DIR}
-/data/bryang/project/CNS/pipeline/config/distal_gpe_gpi_stn_6.tsv
-/data/bryang/project/CNS/pipeline/config/sn_2.tsv
+/data/bryang/project/pipeline/config/distal_gpe_gpi_stn_6.tsv
+/data/bryang/project/pipeline/config/sn_2.tsv
 ```
 
 ### 输出
@@ -349,7 +349,7 @@ inverse_warp
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step4_warpdrive_review.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step4_warpdrive_review.sh
 ```
 
 ### 输入
@@ -373,7 +373,7 @@ ${PHASE1_ANAT_STEP4_DIR}/warpdrive_review.skipped
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step5_save_inverse_warp.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step5_save_inverse_warp.sh
 ```
 
 ### 输入
@@ -398,7 +398,7 @@ ${PHASE1_ANAT_STEP5_DIR}/native_to_mni2009b_1InverseWarp.nii.gz
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step6_distal_inverse_fusion.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step6_distal_inverse_fusion.sh
 ```
 
 ### 输入
@@ -414,7 +414,7 @@ ${PHASE1_ANAT_STEP3_DIR}/sn2_mni.nii.gz
 ${PHASE1_ANAT_STEP3_DIR}/sn2_labels.tsv
 ${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_0GenericAffine.mat
 ${PHASE1_ANAT_STEP5_DIR}/mni2009b_to_native_1Warp.nii.gz
-/data/bryang/project/CNS/pipeline/framework/details/roi.tsv
+/data/bryang/project/pipeline/framework/details/roi.tsv
 ```
 
 ### 输出
@@ -458,7 +458,7 @@ ${SUBJECT_WORK_ROOT}/visualization/phase1_anat/stepview/step6-4_hybrid_atlas.nii
 labels 顺序完全由：
 
 ```text
-/data/bryang/project/CNS/pipeline/framework/details/roi.tsv
+/data/bryang/project/pipeline/framework/details/roi.tsv
 ```
 
 控制。
@@ -468,7 +468,7 @@ labels 顺序完全由：
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step7_t1t2_myelin.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step7_t1t2_myelin.sh
 ```
 
 ### 输入
@@ -477,7 +477,7 @@ labels 顺序完全由：
 ${PHASE1_ANAT_STEP1_DIR}/t1_n4.nii.gz
 ${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1.nii.gz
 ${ATLAS_DIR}/${SUBJECT_ID}_desc-custom_dseg.nii.gz
-/data/bryang/project/CNS/pipeline/framework/details/roi.tsv
+/data/bryang/project/pipeline/framework/details/roi.tsv
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/lh.white
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/rh.white
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/lh.pial
@@ -490,7 +490,7 @@ ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/lh.thickness
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/rh.thickness
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/lh.sulc
 ${PHASE1_ANAT_STEP2_DIR}/surfer_subjects/${SUBJECT_ID}/surf/rh.sulc
-/data/bryang/project/CNS/tools/HCPpipelines-5.0.0/global/templates/standard_mesh_atlases/
+/data/bryang/project/tools/HCPpipelines-5.0.0/global/templates/standard_mesh_atlases/
 ```
 
 ### 输出
@@ -567,7 +567,7 @@ valid_myelin_voxel_count
 其中前两列 `index` 和 `label` 直接复制自：
 
 ```text
-/data/bryang/project/CNS/pipeline/framework/details/roi.tsv
+/data/bryang/project/pipeline/framework/details/roi.tsv
 ```
 
 并严格服从该文件顺序。
@@ -627,7 +627,7 @@ PHASE1_SURFACE_PLOT_ENV=mri_env
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase1_anat/step8_eeg_leadfield.sh
+/data/bryang/project/pipeline/script/phases/phase1_anat/step8_eeg_leadfield.sh
 ```
 
 ### 输入

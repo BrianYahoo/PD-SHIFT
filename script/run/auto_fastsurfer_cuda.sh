@@ -10,7 +10,7 @@ Environment:
   FASTSURFER_CUDA_DEVICES      Comma-separated GPU ids. Default: 0,1,2,3,4,5,6,7
   FASTSURFER_CUDA_SELECTION    round_robin|least_memory. Default: least_memory
   FASTSURFER_CUDA_MAX_SELECTED_DEVICES  Number of least-used GPUs to use. Default: 5
-  FASTSURFER_CUDA_ENV_SCRIPT   CUDA env script. Default: /data/bryang/project/CNS/tools/use_fastsurfer_cuda_env.sh
+  FASTSURFER_CUDA_ENV_SCRIPT   CUDA env script. Default: /data/bryang/project/tools/use_fastsurfer_cuda_env.sh
 EOF
 }
 
@@ -44,7 +44,7 @@ done
 DEVICES_CSV="${FASTSURFER_CUDA_DEVICES:-0,1,2,3,4,5,6,7}"
 CUDA_SELECTION="${FASTSURFER_CUDA_SELECTION:-least_memory}"
 MAX_SELECTED="${FASTSURFER_CUDA_MAX_SELECTED_DEVICES:-5}"
-CUDA_ENV_SCRIPT="${FASTSURFER_CUDA_ENV_SCRIPT:-/data/bryang/project/CNS/tools/use_fastsurfer_cuda_env.sh}"
+CUDA_ENV_SCRIPT="${FASTSURFER_CUDA_ENV_SCRIPT:-/data/bryang/project/tools/use_fastsurfer_cuda_env.sh}"
 
 IFS=',' read -r -a RAW_DEVICES <<<"${DEVICES_CSV}"
 DEVICES=()

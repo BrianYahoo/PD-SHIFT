@@ -12,8 +12,8 @@
 
 当前实际存在并被主流程读取的 TSV 只有两个：
 
-- [distal_gpe_gpi_stn_6.tsv](/data/bryang/project/CNS/pipeline/config/distal_gpe_gpi_stn_6.tsv)
-- [sn_2.tsv](/data/bryang/project/CNS/pipeline/config/sn_2.tsv)
+- [distal_gpe_gpi_stn_6.tsv](/data/bryang/project/pipeline/config/distal_gpe_gpi_stn_6.tsv)
+- [sn_2.tsv](/data/bryang/project/pipeline/config/sn_2.tsv)
 
 它们都在 `phase1_anat/step3_subcortical_syn.sh` 中被读取，调用入口是：
 
@@ -94,7 +94,7 @@ rh	GPe
 
 文件：
 
-- [distal_gpe_gpi_stn_6.tsv](/data/bryang/project/CNS/pipeline/config/distal_gpe_gpi_stn_6.tsv)
+- [distal_gpe_gpi_stn_6.tsv](/data/bryang/project/pipeline/config/distal_gpe_gpi_stn_6.tsv)
 
 当前内容：
 
@@ -139,7 +139,7 @@ rh	STN
 
 文件：
 
-- [sn_2.tsv](/data/bryang/project/CNS/pipeline/config/sn_2.tsv)
+- [sn_2.tsv](/data/bryang/project/pipeline/config/sn_2.tsv)
 
 当前内容：
 
@@ -189,7 +189,7 @@ sn2_labels.tsv
 
 ## 与 roi.tsv 的区别
 
-不要把这两个 TSV 和 [framework/details/roi.tsv](/data/bryang/project/CNS/pipeline/framework/details/roi.tsv) 混淆。
+不要把这两个 TSV 和 [framework/details/roi.tsv](/data/bryang/project/pipeline/framework/details/roi.tsv) 混淆。
 
 区别是：
 

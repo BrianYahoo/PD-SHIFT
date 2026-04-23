@@ -3,8 +3,8 @@
 代码入口：
 
 ```text
-/data/bryang/project/CNS/pipeline/script/phases/phase3_dwi.sh
-/data/bryang/project/CNS/pipeline/script/phases/phase3_dwi/step*.sh
+/data/bryang/project/pipeline/script/phases/phase3_dwi.sh
+/data/bryang/project/pipeline/script/phases/phase3_dwi/step*.sh
 ```
 
 DWI 主目录：

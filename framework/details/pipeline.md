@@ -5,13 +5,13 @@
 ## Code And Config Entry Points
 
 ```text
-/data/bryang/project/CNS/pipeline/script/process.sh
-/data/bryang/project/CNS/pipeline/script/parallel.sh
-/data/bryang/project/CNS/pipeline/script/run/*.sh
-/data/bryang/project/CNS/pipeline/script/common.sh
-/data/bryang/project/CNS/pipeline/config/pipeline.env
-/data/bryang/project/CNS/pipeline/config/datasets/hcp.env
-/data/bryang/project/CNS/pipeline/config/datasets/parkinson.env
+/data/bryang/project/pipeline/script/process.sh
+/data/bryang/project/pipeline/script/parallel.sh
+/data/bryang/project/pipeline/script/run/*.sh
+/data/bryang/project/pipeline/script/common.sh
+/data/bryang/project/pipeline/config/pipeline.env
+/data/bryang/project/pipeline/config/datasets/hcp.env
+/data/bryang/project/pipeline/config/datasets/parkinson.env
 ```
 
 ## Dataset Roots
@@ -19,15 +19,15 @@
 HCP:
 
 ```text
-RAW_ROOT=/data/bryang/project/CNS/data/HCP/raw
-WORKSPACE_ROOT=/data/bryang/project/CNS/data/HCP/workspace
+RAW_ROOT=/data/bryang/project/data/HCP/raw
+WORKSPACE_ROOT=/data/bryang/project/data/HCP/workspace
 ```
 
 Parkinson:
 
 ```text
-RAW_ROOT=/data/bryang/project/CNS/data/Parkinson/raw
-WORKSPACE_ROOT=/data/bryang/project/CNS/data/Parkinson/workspace
+RAW_ROOT=/data/bryang/project/data/Parkinson/raw
+WORKSPACE_ROOT=/data/bryang/project/data/Parkinson/workspace
 ```
 
 ## Subject Workspace Formula
@@ -43,7 +43,7 @@ SUBJECT_ID=sub-<SUBJECT_KEY>
 subject 根目录：
 
 ```text
-SUBJECT_WORK_ROOT=/data/bryang/project/CNS/data/<HCP|Parkinson>/workspace/<FreeSurfer|FastSurfer>/<SUBJECT_KEY>
+SUBJECT_WORK_ROOT=/data/bryang/project/data/<HCP|Parkinson>/workspace/<FreeSurfer|FastSurfer>/<SUBJECT_KEY>
 ```
 
 标准子树：
@@ -116,13 +116,13 @@ COMPARE_DIR=${PHASE4_SUMMARY_DIR}/comparison
 并行日志：
 
 ```text
-/data/bryang/project/CNS/pipeline/logs/parallel/<dataset>/<FreeSurfer|FastSurfer>/<subject>.log
+/data/bryang/project/pipeline/logs/parallel/<dataset>/<FreeSurfer|FastSurfer>/<subject>.log
 ```
 
 issues 日志：
 
 ```text
-/data/bryang/project/CNS/pipeline/issues/log/
+/data/bryang/project/pipeline/issues/log/
 ```
 
 ## Dataset-Relevant Config Keys

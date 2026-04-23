@@ -72,7 +72,7 @@ reset_step7_surface_outputs() {
 run_surface_plot() {
   case "${PHASE1_SURFACE_PLOT_ENV:-osmesa}" in
     osmesa)
-      SURFACE_PLOT_PYTHON="${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:-/data/bryang/project/CNS/tools/surfplot_osmesa_env/bin/python}"
+      SURFACE_PLOT_PYTHON="${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:-/data/bryang/project/tools/envs/surfplot_osmesa_env/bin/python}"
       ;;
     mri|mri_env)
       SURFACE_PLOT_PYTHON="${PHASE1_SURFACE_PLOT_MRI_PYTHON:-${PYTHON_BIN}}"

@@ -205,7 +205,7 @@ load_dataset_config() {
   : "${PHASE1_TISSUE_PROFILE_HIGHRES_MESH_K:=164}"
   : "${PHASE1_SURFACE_PLOT_ENV:=osmesa}"
   : "${PHASE1_SURFACE_PLOT_MRI_PYTHON:=}"
-  : "${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:=/data/bryang/project/CNS/tools/surfplot_osmesa_env/bin/python}"
+  : "${PHASE1_SURFACE_PLOT_OSMESA_PYTHON:=/data/bryang/project/tools/envs/surfplot_osmesa_env/bin/python}"
   : "${PHASE1_EEG_LEADFIELD_ENABLE:=0}"
   : "${PHASE1_EEG_USE_T2:=${PHASE1_T2_COREG_ENABLE}}"
   : "${PHASE1_EEG_CHARM_USE_FS_DIR:=1}"
@@ -216,8 +216,8 @@ load_dataset_config() {
   : "${PHASE1_EEG_REFERENCE_ELECTRODE:=Cz}"
   : "${PHASE1_EEG_TDCS_SUBSAMPLING:=40000}"
   : "${PHASE1_EEG_LEADFIELD_FIELD:=E}"
-  : "${SIMNIBS_ENV_HOME:=/data/bryang/project/CNS/tools/simnibs/simnibs_env}"
-  : "${SIMNIBS_HOME:=/data/bryang/project/CNS/tools/simnibs}"
+  : "${SIMNIBS_ENV_HOME:=/data/bryang/project/tools/simnibs/simnibs_env}"
+  : "${SIMNIBS_HOME:=/data/bryang/project/tools/simnibs}"
   : "${SIMNIBS_PYTHON:=}"
   : "${SIMNIBS_CHARM_CMD:=charm}"
   : "${SIMNIBS_PREPARE_TDCS_LEADFIELD_CMD:=prepare_tdcs_leadfield}"
@@ -233,16 +233,16 @@ load_dataset_config() {
   : "${FASTSURFER_CUDA_DEVICES:=0,1,2,3,4,5,6,7}"
   : "${FASTSURFER_CUDA_SELECTION:=round_robin}"
   : "${FASTSURFER_CUDA_MAX_SELECTED_DEVICES:=5}"
-  : "${FASTSURFER_CUDA_ENV_SCRIPT:=/data/bryang/project/CNS/tools/use_fastsurfer_cuda_env.sh}"
+  : "${FASTSURFER_CUDA_ENV_SCRIPT:=/data/bryang/project/tools/use_fastsurfer_cuda_env.sh}"
   : "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:=1}"
   : "${DWI_CONNECTOME_REPAIR_ZERO_PROTECTED_LABELS:=1}"
   : "${DWI_CONNECTOME_ZERO_LABEL_MAX_DILATION:=12}"
   : "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:=41,42,43,44,45,46,87,88}"
   : "${MNI_T2:=}"
   : "${MNI_SUBCORTICAL_MASK:=}"
-  : "${LEADDBS_HOME:=/data/bryang/project/CNS/tools/leaddbs}"
-  : "${MATLAB_HOME:=/data/bryang/project/CNS/tools/MATLAB}"
-  : "${SPM12_HOME:=/data/bryang/project/CNS/tools/spm12-main}"
+  : "${LEADDBS_HOME:=/data/bryang/project/tools/leaddbs}"
+  : "${MATLAB_HOME:=/data/bryang/project/tools/MATLAB/R2024b}"
+  : "${SPM12_HOME:=/data/bryang/project/tools/spm12-main}"
   : "${MATLAB_BIN:=}"
   if [[ -n "${PIPELINE_PHASE1_EEG_LEADFIELD_ENABLE:-}" ]]; then
     PHASE1_EEG_LEADFIELD_ENABLE="${PIPELINE_PHASE1_EEG_LEADFIELD_ENABLE}"
@@ -595,13 +595,13 @@ link_step_nifti() {
 
 setup_tools_env() {
   local conda_sh="/home/bryang/miniconda3/etc/profile.d/conda.sh"
-  local conda_env="${MRI_ENV_HOME:-/data/bryang/project/CNS/tools/mri_env}"
-  local fsl_home="${FSL_HOME:-/data/bryang/project/CNS/tools/fsl_official}"
-  local fs_home="/data/bryang/project/CNS/tools/freesurfer/usr/local/freesurfer/8.0.0"
-  local fs_license="/data/bryang/project/CNS/tools/freesurfer/license.txt"
-  local fastsurfer_home="${FASTSURFER_HOME:-/data/bryang/project/CNS/tools/FastSurfer}"
-  local fastsurfer_python="${FASTSURFER_PYTHON:-${fastsurfer_home}/.venv/bin/python}"
-  local workbench_dir="${CARET7DIR:-/data/bryang/project/CNS/tools/connectome_workbench-v2.1.0/workbench/bin_linux64}"
+  local conda_env="${MRI_ENV_HOME:-/data/bryang/project/tools/envs/mri_env}"
+  local fsl_home="${FSL_HOME:-/data/bryang/project/tools/envs/fsl_official}"
+  local fs_home="${FREESURFER_HOME:-/data/bryang/project/tools/freesurfer}"
+  local fs_license="/data/bryang/project/tools/freesurfer/license.txt"
+  local fastsurfer_home="${FASTSURFER_HOME:-/data/bryang/project/tools/FastSurfer}"
+  local fastsurfer_python="${FASTSURFER_PYTHON:-/data/bryang/project/tools/envs/fastsurfer_cuda_env/bin/python}"
+  local workbench_dir="${CARET7DIR:-/data/bryang/project/tools/connectome_workbench-v2.1.0/workbench/bin_linux64}"
   local tcsh_bin
   local shebang_stamp
 
@@ -631,10 +631,11 @@ setup_tools_env() {
   export ANTSPATH="$conda_env/bin"
   export FS_LICENSE="$fs_license"
   export FREESURFER_HOME="$fs_home"
+  export NO_FSFAST="${NO_FSFAST:-1}"
   export FASTSURFER_HOME="$fastsurfer_home"
   export FASTSURFER_PYTHON="$fastsurfer_python"
   export CARET7DIR="$workbench_dir"
-  export HCPPIPEDIR="${HCPPIPEDIR:-/data/bryang/project/CNS/tools/HCPpipelines-5.0.0}"
+  export HCPPIPEDIR="${HCPPIPEDIR:-/data/bryang/project/tools/HCPpipelines-5.0.0}"
 
   # Some FreeSurfer helper scripts still hardcode /bin/csh or /bin/tcsh.
   # Rewrite those shebangs to the tcsh bundled in the active env.
@@ -646,7 +647,7 @@ setup_tools_env() {
       first_line="$(head -n 1 "$fs_script")"
       if [[ "$first_line" =~ ^\#![[:space:]]*/bin/(csh|tcsh)(.*)$ ]]; then
         shebang_suffix="${BASH_REMATCH[2]}"
-        tmp_script="${fs_script}.tmp.$$"
+        tmp_script="$(mktemp "${fs_script}.tmp.XXXXXX")"
         {
           printf '#!%s%s\n' "$tcsh_bin" "$shebang_suffix"
           tail -n +2 "$fs_script"
@@ -670,6 +671,10 @@ setup_tools_env() {
   # FSL 命令必须优先来自同一套完整安装，避免出现 epi_reg 来自 mri_env、
   # 但其内部再调用另一套 FSL 二进制的混搭状态。
   export PATH="$CARET7DIR:$FSLDIR/bin:$FSLDIR/share/fsl/bin:$ANTSPATH:$PATH"
+  if [[ "${SURFER_TYPE:-free}" == "fast" ]]; then
+    export PATH="$(dirname "$FASTSURFER_PYTHON"):$FASTSURFER_HOME:$PATH"
+    export PYTHONPATH="${FASTSURFER_HOME}${PYTHONPATH:+:${PYTHONPATH}}"
+  fi
   export PYTHON_BIN="${CONDA_PREFIX}/bin/python"
   export MRTRIX_NTHREADS="${NTHREADS}"
   export OMP_NUM_THREADS="${NTHREADS}"
@@ -720,9 +725,9 @@ setup_simnibs_env() {
 }
 
 setup_leaddbs_env() {
-  local leaddbs_home="${LEADDBS_HOME:-/data/bryang/project/CNS/tools/leaddbs}"
-  local matlab_home="${MATLAB_HOME:-/data/bryang/project/CNS/tools/MATLAB}"
-  local spm12_home="${SPM12_HOME:-/data/bryang/project/CNS/tools/spm12-main}"
+  local leaddbs_home="${LEADDBS_HOME:-/data/bryang/project/tools/leaddbs}"
+  local matlab_home="${MATLAB_HOME:-/data/bryang/project/tools/MATLAB/R2024b}"
+  local spm12_home="${SPM12_HOME:-/data/bryang/project/tools/spm12-main}"
   local matlab_bin="${MATLAB_BIN:-}"
 
   [[ -d "${leaddbs_home}" ]] || die "Missing Lead-DBS: ${leaddbs_home}"

@@ -77,6 +77,7 @@ then
     --json "$FMRI_FUNC_JSON" \
     --output "$FUNC_STC"
 else
+  log "[phase2_fmri] Step2 skipping slice timing for ${SUBJECT_ID} ${FMRI_TRIAL_NAME} because TR=${TR_VALUE}s <= threshold ${FMRI_SLICE_TIMING_TR_THRESHOLD}s"
   ln -sfn "$FUNC_INPUT" "$FUNC_STC"
 fi
 

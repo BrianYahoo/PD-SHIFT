@@ -30,8 +30,8 @@ def parse_args():
         "--roots",
         nargs="+",
         default=[
-            "/data/bryang/project/CNS/data/HCP/workspace",
-            "/data/bryang/project/CNS/data/Parkinson/workspace",
+            "/data/bryang/project/data/HCP/workspace",
+            "/data/bryang/project/data/Parkinson/workspace",
         ],
     )
     parser.add_argument("--fd-threshold", type=float, default=0.5)
