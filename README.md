@@ -5,16 +5,16 @@
 [![Bash](https://img.shields.io/badge/Language-Bash%20%7C%20Python-green)](#)
 [![Neuroimaging](https://img.shields.io/badge/Ecosystem-FreeSurfer%20%7C%20MRtrix3%20%7C%20ANTs%20%7C%20FSL-orange)](#)
 
-**PD-SHIFT** is an advanced, high-fidelity neuroimaging preprocessing pipeline explicitly tailored for Parkinson's disease research. It bridges the anatomical gap between the highly folded cerebral cortex and crucial microscopic deep-brain targets via multi-spectral hybrid atlas fusion, providing a robust structural and functional connectome foundation for large-scale brain network modeling (e.g., digital twin brain simulations) and neuromodulation outcome prediction.
+**PD-SHIFT** is a high-fidelity neuroimaging preprocessing pipeline for Parkinson's disease and HCP-style multimodal MRI. It bridges the anatomical gap between the highly folded cerebral cortex and crucial microscopic deep-brain targets via hybrid atlas fusion, providing a structural and functional connectome foundation for large-scale brain network modeling and neuromodulation outcome prediction.
 
 ---
 
 ## ✨ Core Capabilities
 
-* **Subcortical-Cortical Hybridization**: Seamlessly fuses standard cortical parcellations (FreeSurfer/FastSurfer) with ultra-high-resolution Lead-DBS atlases (e.g., DISTAL, Ewert), enabling millimeter-perfect targeting of the STN, GPi, and SN within a unified spatial framework.
-* **Multi-Spectral Target Anchoring**: Leverages multi-channel `ANTs SyN` registration (T1w + T2w) combined with localized subcortical penalty masks, utilizing T2 iron deposition shadows to lock onto basal ganglia structures despite disease-related atrophy or ventricular enlargement.
+* **Subcortical-Cortical Hybridization**: Seamlessly fuses standard cortical parcellations (FreeSurfer/FastSurfer) with Lead-DBS atlases (e.g., DISTAL, ATAG/SN), enabling unified cortex-subcortex analyses in one native-space atlas.
+* **Config-Driven Deep Registration**: Supports either native Lead-DBS normalization or the in-house ANTs-based fallback pathway, with optional T1w+T2w multi-contrast anchoring when the dataset configuration enables T2 input.
 * **Multimodal Functional Integration**: Implements a rigorous resting-state fMRI preprocessing framework, seamlessly projecting the hybridized high-precision atlas into functional space to extract clean BOLD signals and generate robust Functional Connectivity (FC) matrices.
-* **Quantitative Connectomics**: Generates biologically meaningful, `SIFT2`-weighted structural connectomes coupled with inverse-node-volume scaling (`-scale_invnodevol`), outputting dimensionless probability density matrices perfectly optimized for differential equation-based dynamic network modeling.
+* **Quantitative Connectomics**: Generates four structural connectome variants per subject (`count`, `count+invnodevol`, `sift2`, `sift2+invnodevol`) together with typed whole/cortex/subcortex/subcortex-to-cortex summaries.
 * **Individualized EEG Forward Modeling**: Supports subject-specific SimNIBS/CHARM head meshing and EEG leadfield aggregation, exporting cortex-only (`Nx68`) and Hybrid Atlas-aligned (`Nx88`) forward matrices that can be directly coupled to the same parcellation used by SC/FC.
 
 ---
@@ -25,37 +25,37 @@ PD-SHIFT is engineered with a modular, highly fault-tolerant architecture design
 
 ### Phase 0: Data Initialization (`phase0_init`)
 * **Function:** Standardizes raw heterogeneous inputs into a unified framework.
-* **Process:** Automatically detects, converts (via `dcm2niix`), and organizes raw DICOM (Parkinson cohort) or NIfTI (HCP cohort) datasets into strict **BIDS** (Brain Imaging Data Structure) compliance. Handles submillimeter (e.g., 0.7mm) isometric resampling dynamically.
+* **Process:** Automatically detects, converts (via `dcm2niix`), and organizes raw DICOM (Parkinson cohort) or NIfTI (HCP cohort) datasets into a BIDS-like workspace layout. Dataset-specific import rules, T1 selection priorities, and optional T1 resampling are all controlled from `config/datasets/*.env`.
 
 ### Phase 1: Anatomical Reconstruction (`phase1_anat`)
-* **Function:** Individualized cortical surface reconstruction and highly precise deep-brain atlas fusion.
+* **Function:** Individualized cortical surface reconstruction and deep-brain atlas fusion.
 * **Process:**
   * Multi-contrast brain extraction (SynthStrip/BET) and N4 bias field correction.
-  * High-resolution cortical reconstruction via FreeSurfer/FastSurfer with T2-pial refinement.
-  * Dual-channel (T1+T2) ANTs SyN nonlinear registration anchored by native/MNI subcortical masks.
+  * High-resolution cortical reconstruction via FreeSurfer/FastSurfer, with automatic `-hires` handling for submillimeter FreeSurfer inputs and optional T2-pial refinement when T2 is enabled.
+  * Step 3 supports native Lead-DBS normalization or the in-house ANTs fallback, depending on `PHASE1_LEADDBS_NATIVE_ENABLE`.
   * Generates the individualized **Hybrid Atlas** (Cortical + DISTAL + SN).
-  * Optionally generates individualized **EEG Leadfield** matrices via SimNIBS (`Nx68` cortex, `Nx88` hybrid-order padded).
+  * Optionally generates T1/T2/myelin profiles and individualized **EEG Leadfield** matrices via SimNIBS (`Nx68` cortex, `Nx88` hybrid-order padded).
 
 ### Phase 2: Resting State fMRI Preprocessing (`phase2_fmri`)
 * **Function:** Rigorous functional time-series extraction and cleanup.
 * **Process:**
-  * Slice-timing, susceptibility distortion correction (TOPUP), and rigid motion correction (MCFLIRT).
+  * Slice-timing (automatically skipped when `TR <= 1.0 s`), susceptibility distortion correction (TOPUP), and rigid motion correction (MCFLIRT).
   * Boundary-Based Registration (BBR) to native anatomical space.
   * Covariate regression (GS/WM/CSF/HM), band-pass filtering, and FD-based scrubbing.
-  * Outputs cleaned regional BOLD signals and Functional Connectivity (FC) matrices based on the Hybrid Atlas.
+  * Outputs cleaned regional BOLD signals, per-step diagnostic signal/FC products, and final Functional Connectivity (FC) matrices based on the Hybrid Atlas.
 
 ### Phase 3: dMRI Preprocessing & Tractography (`phase3_dwi`)
 * **Function:** High-order fiber tracking and structural connectome generation.
 * **Process:**
-  * `MRtrix3` pre-processing: Denoising, Gibbs ringing removal, Eddy/Topup, and Bias correction.
+  * `MRtrix3` pre-processing: Denoising, Gibbs ringing removal, Eddy/Topup, and Bias correction. HCP defaults can use `eddy_cuda` with automatic GPU assignment and lock-based collision avoidance.
   * Multi-Shell Multi-Tissue Constrained Spherical Deconvolution (MSMT-CSD) and tissue response normalization.
   * Anatomically-Constrained Tractography (ACT) with `iFOD2`, augmented by subcortical GM topological fixes to prevent premature streamline truncation at the STN/GPi.
   * `SIFT2` filtering and connectome assembly across multiple radial search parameters.
-  * Outputs pure, dynamics-ready Structural Connectivity (SC) matrices.
+  * Outputs four SC matrix variants together with typed whole/cortex/subcortex/subcortex-to-cortex summaries.
 
 ### Phase 4: Summary & Quality Control (`phase4_summary`)
 * **Function:** Automated pipeline auditing and visual verification.
-* **Process:** Compiles manifest ledgers across all phases, cross-references matrix integrities, and generates multi-slice overlay PNGs for rapid visual inspection of the Hybrid Atlas mapping and target engagement.
+* **Process:** Compiles manifest ledgers across all phases, summarizes FC/SC outputs, and generates visual QC products under each subject's top-level `visualization/` directory rather than inside `derivatives/`.
 
 ---
 
@@ -71,11 +71,12 @@ PD-SHIFT relies on a synergistic ecosystem of industry-standard neuroimaging too
 ### 2. Core Dependencies
 Ensure the following neuroimaging suites are installed and correctly added to your system `$PATH`:
 * [**FSL**](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki) (v6.0+)
-* [**FreeSurfer**](https://surfer.nmr.mgh.harvard.edu/) (v7.0+) & [**FastSurfer**](https://github.com/Deep-MI/FastSurfer)
+* [**FreeSurfer**](https://surfer.nmr.mgh.harvard.edu/) (current code path expects v8.x behavior, including `-no-v8`) & [**FastSurfer**](https://github.com/Deep-MI/FastSurfer)
 * [**MRtrix3**](https://www.mrtrix.org/) (v3.0+)
 * [**ANTs**](https://github.com/ANTsX/ANTs) (Advanced Normalization Tools)
 * [**dcm2niix**](https://github.com/rordenlab/dcm2niix) (For DICOM to NIfTI conversion)
 * [**SimNIBS**](https://simnibs.github.io/simnibs/build/html/index.html) (For individualized EEG leadfield modeling)
+* [**MATLAB**](https://www.mathworks.com/) + [**SPM12**](https://www.fil.ion.ucl.ac.uk/spm/software/spm12/) + [**Lead-DBS**](https://www.lead-dbs.org/) (For the native Lead-DBS normalization branch)
 
 ### 3. Python Environment
 PD-SHIFT utilizes Python as the connective tissue for matrix operations and BIDS logic. We recommend using Conda:
@@ -101,8 +102,8 @@ The repository therefore separates Python dependencies into:
 
 The pipeline leverages assets from [Lead-DBS](https://www.lead-dbs.org/). Ensure you have the following assets accessible in your tools directory:
 
-  * `MNI152NLin2009bAsym` templates (T1w, T2w, and subcortical mask).
-  * High-resolution subcortical atlases (e.g., DISTAL, SN) mapped to the same MNI 2009b space.
+  * `MNI152NLin2009bAsym` templates (T1w, T2w, and brain mask).
+  * High-resolution subcortical atlases (e.g., DISTAL, SN / ATAG) mapped to the same MNI 2009b space.
 
 ### 5. Configuration
 
@@ -114,7 +115,10 @@ Before running, you must specify your local paths and hardware configurations.
     cd PD-SHIFT
     ```
 2.  Configure your environment variables and tool paths in `config/pipeline.env` and the dataset-specific files under `config/datasets/`.
-3.  Ensure the FreeSurfer license is correctly exported:
+3.  Review dataset-level switches carefully. In the current defaults:
+    * `hcp` enables T2 import, native Lead-DBS normalization, and `eddy_cuda` auto-assignment.
+    * `parkinson` currently runs T1-only by default, keeps native Lead-DBS normalization enabled, and leaves DWI `eddy` on CPU unless you explicitly change the dataset config.
+4.  Ensure the FreeSurfer license is correctly exported:
     ```bash
     export FS_LICENSE=/path/to/your/license.txt
     ```
