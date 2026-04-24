@@ -21,6 +21,8 @@ require_cmd 5tt2gmwmi
 require_cmd mrconvert
 require_cmd "$PYTHON_BIN"
 
+STEP4_LOG="${DWI_DIR}/step4_registration.log"
+
 # 定义结构像和 atlas 相关输入。
 T1_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t1_brain.nii.gz"
 T2_BRAIN="${PHASE1_ANAT_STEP1_DIR}/t2_coreg_t1_brain.nii.gz"
@@ -85,7 +87,7 @@ fi
 
 # 如果整型版 aparc+aseg 还不存在，则先把分割取整，避免最近邻插值后出现小数。
 if [[ ! -f "${DWI_DIR}/aparc+aseg_int.nii.gz" ]]; then
-  mrcalc "$APARC_ASEG" 0.5 -add -floor "${DWI_DIR}/aparc+aseg_int.nii.gz" -force
+  run_logged "${STEP4_LOG}" mrcalc "$APARC_ASEG" 0.5 -add -floor "${DWI_DIR}/aparc+aseg_int.nii.gz" -force
 fi
 
 # 如果 T1 到 DWI 的刚体矩阵还不存在，则执行 6 自由度配准。
@@ -112,12 +114,12 @@ if [[ "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:-1}" == "1" ]] && ! atlas_small_nuclei_
     source_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_src.nii.gz"
     work_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_work.nii.gz"
     target_mask="${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}/label_${label_idx}_prob.nii.gz"
-    fslmaths "${ATLAS_T1}" -thr "${label_idx}" -uthr "${label_idx}" -bin "${source_mask}"
+    run_logged "${STEP4_LOG}" fslmaths "${ATLAS_T1}" -thr "${label_idx}" -uthr "${label_idx}" -bin "${source_mask}"
     cp -f "${source_mask}" "${work_mask}"
     rm -f "${target_mask}"
     for dil_iter in 0 1 2 3 4; do
       if [[ "${dil_iter}" -gt 0 ]]; then
-        fslmaths "${work_mask}" -dilM "${work_mask}"
+        run_logged "${STEP4_LOG}" fslmaths "${work_mask}" -dilM "${work_mask}"
       fi
       flirt -in "${work_mask}" \
         -ref "${DWI_DIR}/mean_b0.nii.gz" \
@@ -146,7 +148,7 @@ PY
     --candidate-dir "${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}" \
     --protected-labels "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" \
     --output "${DWI_DIR}/atlas_in_dwi.fixed.nii.gz" \
-    --report "${ATLAS_SMALL_NUCLEI_REPORT}"
+    --report "${ATLAS_SMALL_NUCLEI_REPORT}" >>"${STEP4_LOG}" 2>&1
   mv -f "${DWI_DIR}/atlas_in_dwi.fixed.nii.gz" "${DWI_DIR}/atlas_in_dwi.nii.gz"
   rm -rf "${ATLAS_SMALL_NUCLEI_SCRATCH_DIR}"
 fi
@@ -174,25 +176,25 @@ fi
 # 如果 5TT 组织分型图还不存在，则基于 DWI 空间的 FreeSurfer 分割生成 5TT。
 if [[ ! -f "${DWI_DIR}/5tt_dwi.mif" ]]; then
   mkdir -p "${FIVETT_SCRATCH_DIR}"
-  5ttgen freesurfer "${DWI_DIR}/aparc+aseg_dwi.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -lut "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt" -nocrop -nthreads "$NTHREADS" -scratch "${FIVETT_SCRATCH_DIR}"
+  run_logged "${STEP4_LOG}" 5ttgen freesurfer "${DWI_DIR}/aparc+aseg_dwi.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -lut "${DWI_DIR}/FreeSurferColorLUT_mrtrix.txt" -nocrop -nthreads "$NTHREADS" -scratch "${FIVETT_SCRATCH_DIR}"
   rm -rf "${FIVETT_SCRATCH_DIR}"
 fi
 
 # 如果开启 hybrid atlas 修补，则把 STN/GPi 位置从 WM 改到 subcortical GM，避免 ACT 在深部靶点处截断。
 if [[ "${DWI_5TT_FIX_HYBRID_SUBCGM:-1}" == "1" && ! -f "${DWI_DIR}/5tt_subcgm_fix.json" ]]; then
-  mrconvert "${DWI_DIR}/5tt_dwi.mif" "${DWI_DIR}/5tt_dwi_raw.nii.gz" -force
+  run_logged "${STEP4_LOG}" mrconvert "${DWI_DIR}/5tt_dwi.mif" "${DWI_DIR}/5tt_dwi_raw.nii.gz" -force
   "$PYTHON_BIN" "${UTILS_DIR}/phase3_dwi/step4/repair_5tt_hybrid_subcgm.py" \
     --five-tt "${DWI_DIR}/5tt_dwi_raw.nii.gz" \
     --atlas "${DWI_DIR}/atlas_in_dwi.nii.gz" \
     --labels "${ATLAS_LABELS}" \
     --output "${DWI_DIR}/5tt_dwi_fixed.nii.gz" \
-    --output-qc "${DWI_DIR}/5tt_subcgm_fix.json"
-  mrconvert "${DWI_DIR}/5tt_dwi_fixed.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -force
+    --output-qc "${DWI_DIR}/5tt_subcgm_fix.json" >>"${STEP4_LOG}" 2>&1
+  run_logged "${STEP4_LOG}" mrconvert "${DWI_DIR}/5tt_dwi_fixed.nii.gz" "${DWI_DIR}/5tt_dwi.mif" -force
 fi
 
 # 如果灰白质交界种子还不存在，则从 5TT 中提取 gmwmi。
 if [[ ! -f "${DWI_DIR}/gmwmi_seed.mif" ]]; then
-  5tt2gmwmi "${DWI_DIR}/5tt_dwi.mif" "${DWI_DIR}/gmwmi_seed.mif"
+  run_logged "${STEP4_LOG}" 5tt2gmwmi "${DWI_DIR}/5tt_dwi.mif" "${DWI_DIR}/gmwmi_seed.mif"
 fi
 
 # 把图谱叠加到 DWI 的 mean_b0 上，逐层输出 PNG 便于检查结构空间配准质量。
@@ -204,5 +206,5 @@ rm -rf "${VIS_REG_DIR}/dwi/t1" "${VIS_REG_DIR}/dwi/t2"
   --labels-tsv "${ATLAS_LABELS}" \
   --out-dir "${VIS_REG_DIR}" \
   --frame-label dwi \
-  --split-subdirs
+  --split-subdirs >>"${STEP4_LOG}" 2>&1
 touch "${VIS_REG_DONE}"

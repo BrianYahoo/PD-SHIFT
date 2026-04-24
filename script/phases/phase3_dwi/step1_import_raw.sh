@@ -14,6 +14,8 @@ setup_tools_env
 # 检查当前 step 依赖的命令是否存在。
 require_cmd mrconvert
 
+STEP1_LOG="${DWI_DIR}/step1_import_raw.log"
+
 # 定义 DWI 主数据和反向数据的输入路径。
 DWI_NII="${INIT_STEP0_DIR}/dwi.nii.gz"
 DWI_BVAL="${INIT_STEP0_DIR}/dwi.bval"
@@ -47,12 +49,12 @@ fi
 
 # 如果主 DWI 的 mif 版本还不存在，则先导入为 MRtrix 原生格式。
 if [[ ! -f "${DWI_DIR}/dwi_raw.mif" ]]; then
-  mrconvert "$DWI_NII" "${DWI_DIR}/dwi_raw.mif" -fslgrad "$DWI_BVEC" "$DWI_BVAL" -json_import "$DWI_JSON"
+  run_logged "${STEP1_LOG}" mrconvert "$DWI_NII" "${DWI_DIR}/dwi_raw.mif" -fslgrad "$DWI_BVEC" "$DWI_BVAL" -json_import "$DWI_JSON"
 fi
 
 # 如果反向相位编码 DWI 完整存在，则一并导入为 mif。
 if [[ -f "$DWI_REV_NII" && -f "$DWI_REV_BVAL" && -f "$DWI_REV_BVEC" && -f "$DWI_REV_JSON" ]]; then
   if [[ ! -f "${DWI_DIR}/dwi_rev_raw.mif" ]]; then
-    mrconvert "$DWI_REV_NII" "${DWI_DIR}/dwi_rev_raw.mif" -fslgrad "$DWI_REV_BVEC" "$DWI_REV_BVAL" -json_import "$DWI_REV_JSON"
+    run_logged "${STEP1_LOG}" mrconvert "$DWI_REV_NII" "${DWI_DIR}/dwi_rev_raw.mif" -fslgrad "$DWI_REV_BVEC" "$DWI_REV_BVAL" -json_import "$DWI_REV_JSON"
   fi
 fi

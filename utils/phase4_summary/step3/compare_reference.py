@@ -105,7 +105,7 @@ def load_trial_names(final_dir: Path):
 
 def load_hcp_trial_fc_reference(fc_root: Path, subject_key: str, trial_name: str):
     """加载 HCP 某个 trial 的 individual FC reference。"""
-    ref_path = fc_root / "preprocessed" / "Atlas_MSMAll" / "individual" / subject_key / trial_name / "cortical" / "fc.npy"
+    ref_path = fc_root / subject_key / trial_name / "cortical" / "fc.npy"
     if not ref_path.exists():
         raise FileNotFoundError(ref_path)
     return np.load(ref_path).astype(float), str(ref_path)
@@ -113,7 +113,7 @@ def load_hcp_trial_fc_reference(fc_root: Path, subject_key: str, trial_name: str
 
 def load_hcp_average_fc_reference(fc_root: Path, subject_key: str):
     """加载 HCP 某个 subject 的 average cortical FC reference。"""
-    ref_path = fc_root / "preprocessed" / "Atlas_MSMAll" / "individual" / subject_key / "average" / "cortical" / "fc.npy"
+    ref_path = fc_root / subject_key / "average" / "cortical" / "fc.npy"
     if not ref_path.exists():
         raise FileNotFoundError(ref_path)
     return np.load(ref_path).astype(float), str(ref_path)
@@ -121,7 +121,7 @@ def load_hcp_average_fc_reference(fc_root: Path, subject_key: str):
 
 def load_parkinson_fc_reference(fc_root: Path):
     """加载 Parkinson 使用的 HCP group FC reference。"""
-    ref_path = fc_root / "preprocessed" / "Atlas_MSMAll" / "group" / "fc.npy"
+    ref_path = fc_root / "Atlas_MSMAll" / "group" / "fc.npy"
     if not ref_path.exists():
         raise FileNotFoundError(ref_path)
     return np.load(ref_path).astype(float), str(ref_path)

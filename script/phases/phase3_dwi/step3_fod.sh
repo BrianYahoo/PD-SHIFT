@@ -16,6 +16,8 @@ require_cmd dwi2response
 require_cmd dwi2fod
 require_cmd mtnormalise
 
+STEP3_LOG="${DWI_DIR}/step3_fod.log"
+
 # 如果 FOD 归一化结果已经存在，则直接跳过。
 if [[ -f "${DWI_DIR}/wm_response.txt" && -f "${DWI_DIR}/gm_response.txt" && -f "${DWI_DIR}/csf_response.txt" && -f "${DWI_DIR}/wmfod_norm.mif" && -f "${DWI_DIR}/gmfod_norm.mif" && -f "${DWI_DIR}/csffod_norm.mif" ]]; then
   log "[phase3_dwi] Step3 already done for ${SUBJECT_ID}"
@@ -24,20 +26,20 @@ fi
 
 # 如果响应函数还不存在，则先估计 WM/GM/CSF 三类响应函数。
 if [[ ! -f "${DWI_DIR}/wm_response.txt" ]]; then
-  dwi2response dhollander "${DWI_DIR}/dwi_preproc_bias.mif" \
+  run_logged "${STEP3_LOG}" dwi2response dhollander "${DWI_DIR}/dwi_preproc_bias.mif" \
     "${DWI_DIR}/wm_response.txt" "${DWI_DIR}/gm_response.txt" "${DWI_DIR}/csf_response.txt" \
     -mask "${DWI_DIR}/dwi_mask.mif"
 fi
 
 # 如果归一化后的 FOD 还不存在，则执行 MSMT-CSD 和 mtnormalise。
 if [[ ! -f "${DWI_DIR}/wmfod_norm.mif" ]]; then
-  dwi2fod msmt_csd "${DWI_DIR}/dwi_preproc_bias.mif" \
+  run_logged "${STEP3_LOG}" dwi2fod msmt_csd "${DWI_DIR}/dwi_preproc_bias.mif" \
     "${DWI_DIR}/wm_response.txt" "${DWI_DIR}/wmfod.mif" \
     "${DWI_DIR}/gm_response.txt" "${DWI_DIR}/gmfod.mif" \
     "${DWI_DIR}/csf_response.txt" "${DWI_DIR}/csffod.mif" \
     -mask "${DWI_DIR}/dwi_mask.mif" \
     -lmax "${DWI_LMAX},0,0"
-  mtnormalise \
+  run_logged "${STEP3_LOG}" mtnormalise \
     "${DWI_DIR}/wmfod.mif" "${DWI_DIR}/wmfod_norm.mif" \
     "${DWI_DIR}/gmfod.mif" "${DWI_DIR}/gmfod_norm.mif" \
     "${DWI_DIR}/csffod.mif" "${DWI_DIR}/csffod_norm.mif" \

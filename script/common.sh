@@ -25,6 +25,19 @@ require_cmd() {
   command -v "$cmd" >/dev/null 2>&1 || die "Command not found: $cmd"
 }
 
+run_logged() {
+  local log_path="$1"
+  shift
+  mkdir -p "$(dirname "$log_path")"
+  {
+    printf '\n===== %s =====\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+    printf 'Command:'
+    printf ' %q' "$@"
+    printf '\n'
+    "$@"
+  } >>"$log_path" 2>&1
+}
+
 nifti_is_readable() {
   local nifti_path="$1"
   local pybin="${PYTHON_BIN:-python3}"
@@ -234,6 +247,13 @@ load_dataset_config() {
   : "${FASTSURFER_CUDA_SELECTION:=round_robin}"
   : "${FASTSURFER_CUDA_MAX_SELECTED_DEVICES:=5}"
   : "${FASTSURFER_CUDA_ENV_SCRIPT:=/data/bryang/project/tools/use_fastsurfer_cuda_env.sh}"
+  : "${DWI_EDDY_USE_CUDA:=0}"
+  : "${DWI_EDDY_CUDA_AUTO_ASSIGN:=0}"
+  : "${DWI_EDDY_CUDA_DEVICES:=0,1,2,3,4,5,6,7}"
+  : "${DWI_EDDY_CUDA_SELECTION:=least_memory}"
+  : "${DWI_EDDY_CUDA_MAX_SELECTED_DEVICES:=5}"
+  : "${DWI_EDDY_CUDA_LOCK_DIR:=/tmp/cns_eddy_cuda_locks}"
+  : "${DWI_EDDY_CUDA_LOCK_POLL_SEC:=15}"
   : "${DWI_ATLAS_PRESERVE_SMALL_NUCLEI:=1}"
   : "${DWI_CONNECTOME_REPAIR_ZERO_PROTECTED_LABELS:=1}"
   : "${DWI_CONNECTOME_ZERO_LABEL_MAX_DILATION:=12}"

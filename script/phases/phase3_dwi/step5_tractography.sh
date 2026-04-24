@@ -15,6 +15,8 @@ setup_tools_env
 require_cmd tckgen
 require_cmd tcksift2
 
+STEP5_LOG="${DWI_DIR}/step5_tractography.log"
+
 # 如果 tractography 和 SIFT2 权重都已存在，则直接跳过。
 if [[ -f "${DWI_DIR}/tracks.tck" && -f "${DWI_DIR}/sift2_weights.txt" ]]; then
   log "[phase3_dwi] Step5 already done for ${SUBJECT_ID}"
@@ -23,7 +25,7 @@ fi
 
 # 如果全脑纤维束文件还不存在，则执行 ACT + backtrack 追踪。
 if [[ ! -f "${DWI_DIR}/tracks.tck" ]]; then
-  tckgen "${DWI_DIR}/wmfod_norm.mif" "${DWI_DIR}/tracks.tck" \
+  run_logged "${STEP5_LOG}" tckgen "${DWI_DIR}/wmfod_norm.mif" "${DWI_DIR}/tracks.tck" \
     -algorithm iFOD2 \
     -act "${DWI_DIR}/5tt_dwi.mif" \
     -backtrack \
@@ -37,5 +39,5 @@ fi
 
 # 如果 SIFT2 权重还不存在，则基于追踪结果和 FOD 估计 streamline 权重。
 if [[ ! -f "${DWI_DIR}/sift2_weights.txt" ]]; then
-  tcksift2 "${DWI_DIR}/tracks.tck" "${DWI_DIR}/wmfod_norm.mif" "${DWI_DIR}/sift2_weights.txt" -act "${DWI_DIR}/5tt_dwi.mif" -nthreads "$NTHREADS"
+  run_logged "${STEP5_LOG}" tcksift2 "${DWI_DIR}/tracks.tck" "${DWI_DIR}/wmfod_norm.mif" "${DWI_DIR}/sift2_weights.txt" -act "${DWI_DIR}/5tt_dwi.mif" -nthreads "$NTHREADS"
 fi

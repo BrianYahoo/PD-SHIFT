@@ -182,14 +182,14 @@ ${COMPARE_DIR}/sc/count_invnodevol/max1/*.png
 HCP FC：
 
 ```text
-${FC_REFERENCE_ROOT}/individual/<subject>/<trial_name>/cortical/fc.npy
-${FC_REFERENCE_ROOT}/individual/<subject>/average/cortical/fc.npy
+${FC_REFERENCE_ROOT}/<subject>/<trial_name>/cortical/fc.npy
+${FC_REFERENCE_ROOT}/<subject>/average/cortical/fc.npy
 ```
 
 Parkinson FC：
 
 ```text
-${FC_REFERENCE_ROOT}/group/fc.npy
+${FC_REFERENCE_ROOT}/Atlas_MSMAll/group/fc.npy
 ```
 
 SC：

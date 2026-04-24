@@ -15,6 +15,8 @@ setup_tools_env
 require_cmd tck2connectome
 require_cmd "$PYTHON_BIN"
 
+STEP6_LOG="${DWI_DIR}/step6_connectome.log"
+
 matrix_matches_current_atlas() {
   local matrix_path="$1"
   [[ -f "${matrix_path}" ]] || return 1
@@ -45,7 +47,7 @@ run_connectome() {
     args+=(-scale_invnodevol)
   fi
 
-  tck2connectome "${DWI_DIR}/tracks.tck" "${DWI_DIR}/atlas_in_dwi.nii.gz" "${out_csv}" \
+  run_logged "${STEP6_LOG}" tck2connectome "${DWI_DIR}/tracks.tck" "${DWI_DIR}/atlas_in_dwi.nii.gz" "${out_csv}" \
     "${args[@]}" \
     -symmetric -zero_diagonal -assignment_radial_search "${radial_search}" -nthreads "${NTHREADS}"
 }
@@ -116,7 +118,7 @@ repair_zero_label_connectome_if_needed() {
     --radial-search "${MAIN_RADIAL_SEARCH}" \
     --protected-labels "${DWI_SMALL_NUCLEI_PROTECTED_LABELS:-41,42,43,44,45,46,87,88}" \
     --max-dilation "${DWI_CONNECTOME_ZERO_LABEL_MAX_DILATION:-12}" \
-    --nthreads "${NTHREADS}"
+    --nthreads "${NTHREADS}" >>"${STEP6_LOG}" 2>&1
   mv -f "${matrix_path}.fixed" "${matrix_path}"
 }
 
@@ -188,7 +190,7 @@ if [[ ! -f "$COMPARE_RADIAL_PNG" ]]; then
     --matrix-compare "$COMPARE_SC_SIFT2" \
     --main-label "radial=${MAIN_RADIAL_SEARCH} sift2" \
     --compare-label "radial=${COMPARE_RADIAL_SEARCH} sift2" \
-    --output "$COMPARE_RADIAL_PNG"
+    --output "$COMPARE_RADIAL_PNG" >>"${STEP6_LOG}" 2>&1
 fi
 
 # 输出 invnodevol 版本的 radial 2 vs radial 4 对比图。
@@ -198,7 +200,7 @@ if [[ ! -f "$COMPARE_RADIAL_INVNODEVOL_PNG" ]]; then
     --matrix-compare "$COMPARE_SC_SIFT2_INVNODEVOL" \
     --main-label "radial=${MAIN_RADIAL_SEARCH} sift2 invnodevol" \
     --compare-label "radial=${COMPARE_RADIAL_SEARCH} sift2 invnodevol" \
-    --output "$COMPARE_RADIAL_INVNODEVOL_PNG"
+    --output "$COMPARE_RADIAL_INVNODEVOL_PNG" >>"${STEP6_LOG}" 2>&1
 fi
 
 # 写出 DWI 分支的最终输出清单。

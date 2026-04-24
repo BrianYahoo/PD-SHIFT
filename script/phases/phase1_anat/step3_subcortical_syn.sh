@@ -319,8 +319,14 @@ reset_step3_outputs() {
   rm -rf "${LEADDBS_NATIVE_DIR}"
 }
 
-# 输出当前 step 的开始日志。
-log "[phase1_anat] Step3 subcortical SyN for ${SUBJECT_ID}"
+# 输出当前 step 的开始日志。这里按实际 registration engine 命名，
+# 避免 native Lead-DBS 仍然打印成 SyN，造成并行日志阅读混淆。
+if [[ "${STEP3_USE_LEADDBS_NATIVE}" == "1" ]]; then
+  log "[phase1_anat] Step3 native Lead-DBS normalization for ${SUBJECT_ID}"
+else
+  log "[phase1_anat] Step3 subcortical SyN for ${SUBJECT_ID}"
+fi
+log "[phase1_anat] Step3 engine=${STEP3_REGISTRATION_ENGINE} mode=${STEP3_REGISTRATION_MODE} use_t2=${STEP3_USE_T2} use_mask=${STEP3_USE_MASK} use_affine=${STEP3_USE_AFFINE}"
 
 if [[ -f "${STEP3_MANIFEST}" ]]; then
   manifest_registration_engine="$(read_manifest_value "${STEP3_MANIFEST}" "registration_engine")"

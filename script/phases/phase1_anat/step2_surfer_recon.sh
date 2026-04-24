@@ -83,6 +83,9 @@ SURFER_T2_INPUT_EFFECTIVE="${SURFER_T2_INPUT}"
 SURFER_HIRES_INPUT_PREP_DIR="${PHASE1_ANAT_STEP2_DIR}/hires_input"
 SURFER_HIRES_INPUT_CROP_APPLIED="0"
 SURFER_HIRES_INPUT_CROP_BOUNDS=""
+SURFER_ENGINE_LOG_CURRENT=""
+SURFER_RETRY_ATTEMPT="1"
+SURFER_RETRY_MAX="3"
 if [[ "${SURFER_TYPE}" == "free" ]]; then
   if "${PYTHON_BIN}" - "${T1_NATIVE_INPUT}" <<'PY' >/dev/null 2>&1
 import sys
@@ -190,12 +193,13 @@ freesurfer_uses_v8_defaults() {
 }
 
 freesurfer_t2_pial_refine_segfault() {
+  local log_path="${SURFER_ENGINE_LOG_CURRENT:-${SURFER_ENGINE_LOG}}"
   [[ "${SURFER_TYPE}" == "free" ]] || return 1
   [[ "${SURFER_USE_T2_EFFECTIVE:-0}" == "1" ]] || return 1
-  [[ -f "${SURFER_ENGINE_LOG}" ]] || return 1
-  grep -q "Command terminated by signal 11" "${SURFER_ENGINE_LOG}" || return 1
-  grep -q "#@# Refine Pial Surfs w/ T2/FLAIR" "${SURFER_ENGINE_LOG}" || return 1
-  grep -q -- "--mmvol T2.mgz T2" "${SURFER_ENGINE_LOG}" || return 1
+  [[ -f "${log_path}" ]] || return 1
+  grep -q "Command terminated by signal 11" "${log_path}" || return 1
+  grep -q "#@# Refine Pial Surfs w/ T2/FLAIR" "${log_path}" || return 1
+  grep -q -- "--mmvol T2.mgz T2" "${log_path}" || return 1
 }
 
 freesurfer_hires_fov_exceeds_limit() {
@@ -438,11 +442,11 @@ step2_requires_config_refresh() {
 
 reset_surfer_subject() {
   local reason="$1"
+  local preserve_engine_log="${2:-0}"
   log "[phase1_anat] Step2 resetting ${SURFER_LABEL} subject for ${SUBJECT_ID}: ${reason}"
   rm -rf "${SURFER_SUBJECT_DIR}"
   rm -f "${APARC_ASEG}" \
     "${SURFER_DONE}" \
-    "${SURFER_ENGINE_LOG}" \
     "${STEP2_MANIFEST}" \
     "${PHASE1_ANAT_STEP2_DIR}/mri_aparc2aseg.log" \
     "${PHASE1_ANAT_STEP2_DIR}/mri_convert.log" \
@@ -450,6 +454,9 @@ reset_surfer_subject() {
     "${PHASE1_ANAT_STEP2_DIR}/mri_vol2vol_brainmask.log" \
     "${PHASE1_ANAT_STEP2_DIR}/mri_vol2vol_aparc_native.log" \
     "${PHASE1_ANAT_STEP2_DIR}/recon-all-init.log"
+  if [[ "${preserve_engine_log}" != "1" ]]; then
+    rm -f "${SURFER_ENGINE_LOG}"
+  fi
 }
 
 write_surfer_done() {
@@ -466,7 +473,11 @@ run_freesurfer() {
   local recon_args=()
   local t2_coreg="${SURFER_T2_INPUT_EFFECTIVE}"
   local t1_input="${SURFER_T1_INPUT_EFFECTIVE}"
+  local attempt_log="${PHASE1_ANAT_STEP2_DIR}/recon-all.attempt${SURFER_RETRY_ATTEMPT}.log"
+  local recon_status=0
   [[ -f "${fs_xmask}" ]] || fs_xmask="${SURFER_T1_MASK_EFFECTIVE}"
+  SURFER_ENGINE_LOG_CURRENT="${attempt_log}"
+  : > "${attempt_log}"
   if [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]]; then
     recon_args+=(-hires)
     log "[phase1_anat] Step2 enabling FreeSurfer -hires (${SURFER_HIRES_REASON})"
@@ -483,11 +494,68 @@ run_freesurfer() {
     # FreeSurfer 8 v8 defaults inject synthstrip/synthseg/synthmorph steps.
     recon_args+=(-no-v8)
   fi
-  if [[ -f "${SURFER_SUBJECT_DIR}/mri/orig/001.mgz" ]]; then
-    recon-all -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}" >"${SURFER_ENGINE_LOG}" 2>&1
-  else
-    recon-all -i "${t1_input}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}" >"${SURFER_ENGINE_LOG}" 2>&1
-  fi
+  {
+    printf '===== %s FreeSurfer attempt %s/%s for %s (use_t2=%s, hires=%s) =====\n' \
+      "$(date '+%Y-%m-%d %H:%M:%S')" \
+      "${SURFER_RETRY_ATTEMPT}" \
+      "$(( SURFER_RETRY_MAX + 1 ))" \
+      "${SUBJECT_ID}" \
+      "${SURFER_USE_T2_EFFECTIVE}" \
+      "${SURFER_HIRES_EFFECTIVE:-0}"
+    if [[ -f "${SURFER_SUBJECT_DIR}/mri/orig/001.mgz" ]]; then
+      recon-all -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
+    else
+      recon-all -i "${t1_input}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
+    fi
+  } >>"${attempt_log}" 2>&1
+  recon_status=$?
+  cat "${attempt_log}" >>"${SURFER_ENGINE_LOG}"
+  return "${recon_status}"
+}
+
+run_freesurfer_with_retries() {
+  local recon_status=1
+  local retry_count=0
+  local current_log=""
+  : > "${SURFER_ENGINE_LOG}"
+
+  while true; do
+    SURFER_RETRY_ATTEMPT="$(( retry_count + 1 ))"
+    prepare_freesurfer_hires_inputs_if_needed
+    set +e
+    run_freesurfer
+    recon_status=$?
+    set -e
+    (( recon_status == 0 )) && return 0
+
+    current_log="${SURFER_ENGINE_LOG_CURRENT}"
+    if [[ -f "${SURFER_ORIG}" ]] && [[ -f "${current_log}" ]] && grep -q "could not open mask volume brainmask.mgz" "${current_log}"; then
+      retry_count=$(( retry_count + 1 ))
+      if (( retry_count > SURFER_RETRY_MAX )); then
+        break
+      fi
+      log "[phase1_anat] Step2 retry ${retry_count}/${SURFER_RETRY_MAX} after missing FreeSurfer brainmask for ${SUBJECT_ID}"
+      ensure_freesurfer_brainmask
+      rm -f "${FS_DONE}" "${SURFER_DONE}"
+      continue
+    fi
+
+    if freesurfer_t2_pial_refine_segfault; then
+      retry_count=$(( retry_count + 1 ))
+      if (( retry_count > SURFER_RETRY_MAX )); then
+        break
+      fi
+      log "[phase1_anat] Step2 retry ${retry_count}/${SURFER_RETRY_MAX} after FreeSurfer T2 pial refinement crash for ${SUBJECT_ID}; disabling T2"
+      SURFER_USE_T2_EFFECTIVE="0"
+      SURFER_T2_INPUT_EFFECTIVE=""
+      reset_surfer_subject "t2 pial refinement crashed" 1
+      continue
+    fi
+
+    break
+  done
+
+  return "${recon_status}"
 }
 
 run_fastsurfer() {
@@ -624,38 +692,14 @@ if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
   if [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_engine_outputs_ready; then
     :
   else
-    prepare_freesurfer_hires_inputs_if_needed
     set +e
     if [[ "${SURFER_TYPE}" == "free" ]]; then
-      run_freesurfer
+      run_freesurfer_with_retries
     else
       run_fastsurfer
     fi
     recon_status=$?
     set -e
-
-    # 如果第一次失败是因为缺 brainmask，则自动补脑掩膜并重新续跑一次。
-    if (( recon_status != 0 )) && [[ "${SURFER_TYPE}" == "free" ]]; then
-      if [[ -f "${SURFER_ORIG}" ]] && grep -q "could not open mask volume brainmask.mgz" "${SURFER_ENGINE_LOG}"; then
-        log "[phase1_anat] Step2 detected missing FreeSurfer brainmask, repairing and resuming"
-        ensure_freesurfer_brainmask
-        rm -f "${FS_DONE}" "${SURFER_DONE}"
-        set +e
-        run_freesurfer
-        recon_status=$?
-        set -e
-      fi
-    fi
-
-    if (( recon_status != 0 )) && freesurfer_t2_pial_refine_segfault; then
-      log "[phase1_anat] Step2 detected FreeSurfer T2 pial refinement crash, retrying without T2 for ${SUBJECT_ID}"
-      SURFER_USE_T2_EFFECTIVE="0"
-      reset_surfer_subject "t2 pial refinement crashed"
-      set +e
-      run_freesurfer
-      recon_status=$?
-      set -e
-    fi
 
     if (( recon_status != 0 )) && [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_recoverable_segstats_failure; then
       log "[phase1_anat] Step2 detected recoverable FastSurfer segstats failure for ${SUBJECT_ID}, reusing completed surfaces and mapped aparc+aseg"
