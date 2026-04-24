@@ -13,6 +13,7 @@ EOF
 }
 
 LOG_ROOT="${PIPELINE_PARALLEL_LOG_ROOT:-${PIPELINE_ROOT}/logs/parallel}"
+PARALLEL_STATE_ROOT="${LOG_ROOT}/.parallel_state"
 MAX_PARALLEL="${MAX_PARALLEL:-5}"
 FAIL_COUNT=0
 DATASET_ARG=""
@@ -23,6 +24,7 @@ declare -A PID_TO_DATASET=()
 declare -A PID_TO_SURFER_LABEL=()
 declare -A PID_TO_SUBJECT=()
 declare -A PID_TO_STATUS_FILE=()
+declare -A PID_TO_LOCK_DIR=()
 TOTAL_SUBJECT_COUNT=0
 
 while [[ $# -gt 0 ]]; do
@@ -147,6 +149,69 @@ setup_fastsurfer_cuda_for_subject() {
   echo "[parallel] FastSurfer CUDA enabled for ${subject}: CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}, selection=${FASTSURFER_CUDA_SELECTION:-round_robin}, pool=$(cuda_candidate_devices | paste -sd, -), FASTSURFER_PYTHON=${FASTSURFER_PYTHON}"
 }
 
+parallel_subject_state_dir() {
+  local dataset="$1"
+  local surfer_label="$2"
+  echo "${PARALLEL_STATE_ROOT}/${dataset}/${surfer_label}"
+}
+
+parallel_subject_status_file() {
+  local dataset="$1"
+  local surfer_label="$2"
+  local subject="$3"
+  echo "$(parallel_subject_state_dir "${dataset}" "${surfer_label}")/${subject}.status"
+}
+
+parallel_subject_lock_dir() {
+  local dataset="$1"
+  local surfer_label="$2"
+  local subject="$3"
+  echo "$(parallel_subject_state_dir "${dataset}" "${surfer_label}")/${subject}.lock"
+}
+
+parallel_subject_lock_is_stale() {
+  local lock_dir="$1"
+  local owner_file="${lock_dir}/owner.tsv"
+  local owner_pid=""
+  [[ -d "${lock_dir}" ]] || return 1
+  [[ -f "${owner_file}" ]] || return 0
+  owner_pid="$(awk -F '\t' '$1=="pid" {print $2; exit}' "${owner_file}" 2>/dev/null || true)"
+  [[ "${owner_pid}" =~ ^[0-9]+$ ]] || return 0
+  if kill -0 "${owner_pid}" 2>/dev/null; then
+    return 1
+  fi
+  return 0
+}
+
+acquire_parallel_subject_lock() {
+  local dataset="$1"
+  local surfer_label="$2"
+  local subject="$3"
+  local subject_log="$4"
+  local lock_dir="$5"
+  local state_dir=""
+
+  state_dir="$(parallel_subject_state_dir "${dataset}" "${surfer_label}")"
+  mkdir -p "${state_dir}"
+
+  if [[ -d "${lock_dir}" ]] && parallel_subject_lock_is_stale "${lock_dir}"; then
+    rm -rf "${lock_dir}"
+  fi
+
+  if ! mkdir "${lock_dir}" 2>/dev/null; then
+    die "Subject is already running and log is locked: ${dataset} ${surfer_label} ${subject} (${subject_log})"
+  fi
+
+  printf 'pid\t%s\ndataset\t%s\nsurfer_label\t%s\nsubject\t%s\nstarted_at\t%s\nlog\t%s\n' \
+    "$$" "${dataset}" "${surfer_label}" "${subject}" "$(date '+%Y-%m-%d %H:%M:%S')" "${subject_log}" >"${lock_dir}/owner.tsv"
+}
+
+release_parallel_subject_lock() {
+  local lock_dir="$1"
+  [[ -n "${lock_dir}" && -d "${lock_dir}" ]] || return 0
+  rm -rf "${lock_dir}"
+}
+
 run_one_subject() {
   local dataset="$1"
   local surfer="$2"
@@ -155,11 +220,18 @@ run_one_subject() {
   local launch_index="$5"
   local subject_log_dir="${LOG_ROOT}/${dataset}/${surfer_label}"
   local subject_log="${subject_log_dir}/${subject}.log"
-  local subject_status="${subject_log}.status"
+  local subject_status
+  local subject_lock_dir
+  local legacy_subject_status="${subject_log}.status"
+
+  subject_status="$(parallel_subject_status_file "${dataset}" "${surfer_label}" "${subject}")"
+  subject_lock_dir="$(parallel_subject_lock_dir "${dataset}" "${surfer_label}" "${subject}")"
   log "[parallel] start ${dataset} ${surfer_label} ${subject}"
   mkdir -p "${subject_log_dir}"
+  acquire_parallel_subject_lock "${dataset}" "${surfer_label}" "${subject}" "${subject_log}" "${subject_lock_dir}"
   : > "${subject_log}"
   rm -f "${subject_status}"
+  rm -f "${legacy_subject_status}"
   (
     finalize_subject_run() {
       local exit_code=$?
@@ -172,6 +244,7 @@ run_one_subject() {
         printf '[%s] failed %s %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${dataset}" "${surfer_label}" "${subject}" >>"${subject_log}"
         printf 'failed\n' >"${subject_status}"
       fi
+      release_parallel_subject_lock "${subject_lock_dir}"
     }
 
     trap finalize_subject_run EXIT
@@ -184,10 +257,15 @@ run_one_subject() {
     } >>"${subject_log}" 2>&1
   ) &
   ACTIVE_PIDS+=("$!")
+  if [[ -d "${subject_lock_dir}" ]]; then
+    printf 'pid\t%s\ndataset\t%s\nsurfer_label\t%s\nsubject\t%s\nstarted_at\t%s\nlog\t%s\n' \
+      "$!" "${dataset}" "${surfer_label}" "${subject}" "$(date '+%Y-%m-%d %H:%M:%S')" "${subject_log}" >"${subject_lock_dir}/owner.tsv"
+  fi
   PID_TO_DATASET["$!"]="${dataset}"
   PID_TO_SURFER_LABEL["$!"]="${surfer_label}"
   PID_TO_SUBJECT["$!"]="${subject}"
   PID_TO_STATUS_FILE["$!"]="${subject_status}"
+  PID_TO_LOCK_DIR["$!"]="${subject_lock_dir}"
 }
 
 remove_active_pid() {
@@ -206,6 +284,7 @@ harvest_subject_result() {
   local surfer_label="${PID_TO_SURFER_LABEL[$finished_pid]:-}"
   local subject="${PID_TO_SUBJECT[$finished_pid]:-}"
   local status_file="${PID_TO_STATUS_FILE[$finished_pid]:-}"
+  local lock_dir="${PID_TO_LOCK_DIR[$finished_pid]:-}"
   local run_state="failed"
 
   [[ -n "${dataset}" ]] || return 0
@@ -213,6 +292,7 @@ harvest_subject_result() {
     run_state="$(tr -d '[:space:]' <"${status_file}")"
     rm -f "${status_file}"
   fi
+  release_parallel_subject_lock "${lock_dir}"
 
   if [[ "${run_state}" == "success" ]]; then
     log "[parallel] done ${dataset} ${surfer_label} ${subject}"
@@ -222,7 +302,7 @@ harvest_subject_result() {
   fi
 
   remove_active_pid "${finished_pid}"
-  unset PID_TO_DATASET["$finished_pid"] PID_TO_SURFER_LABEL["$finished_pid"] PID_TO_SUBJECT["$finished_pid"] PID_TO_STATUS_FILE["$finished_pid"]
+  unset PID_TO_DATASET["$finished_pid"] PID_TO_SURFER_LABEL["$finished_pid"] PID_TO_SUBJECT["$finished_pid"] PID_TO_STATUS_FILE["$finished_pid"] PID_TO_LOCK_DIR["$finished_pid"]
 }
 
 find_finished_subject_pid() {

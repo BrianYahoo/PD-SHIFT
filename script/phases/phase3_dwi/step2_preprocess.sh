@@ -55,35 +55,37 @@ eddy_cuda_candidate_devices() {
   local max_devices="${DWI_EDDY_CUDA_MAX_SELECTED_DEVICES:-5}"
   local -a configured_devices=()
   local -a selected_devices=()
-  local -a memory_sorted_devices=()
+  local -A configured_lookup=()
+  local -a memory_rows=()
   local query_output=""
   local line=""
   local gpu_idx=""
   local mem_used=""
-  local configured=""
+  local row=""
 
   mapfile -t configured_devices < <(parse_eddy_cuda_devices "${DWI_EDDY_CUDA_DEVICES:-0,1,2,3,4,5,6,7}")
   (( ${#configured_devices[@]} > 0 )) || die "DWI_EDDY_CUDA_DEVICES is empty"
   [[ "${max_devices}" =~ ^[0-9]+$ ]] && (( max_devices > 0 )) || max_devices="${#configured_devices[@]}"
+  for gpu_idx in "${configured_devices[@]}"; do
+    configured_lookup["${gpu_idx}"]=1
+  done
 
   if [[ "${DWI_EDDY_CUDA_SELECTION:-least_memory}" == "least_memory" ]] && command -v nvidia-smi >/dev/null 2>&1; then
     query_output="$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits 2>/dev/null || true)"
     if [[ -n "${query_output}" ]]; then
-      mapfile -t memory_sorted_devices < <(
-        while IFS= read -r line; do
-          gpu_idx="${line%%,*}"
-          mem_used="${line#*,}"
-          gpu_idx="${gpu_idx//[[:space:]]/}"
-          mem_used="${mem_used//[[:space:]]/}"
-          for configured in "${configured_devices[@]}"; do
-            if [[ "${gpu_idx}" == "${configured}" && "${mem_used}" =~ ^[0-9]+$ ]]; then
-              printf '%s\t%s\n' "${mem_used}" "${gpu_idx}"
-            fi
-          done
-        done <<<"${query_output}" | sort -n -k1,1 -k2,2n | head -n "${max_devices}" | awk -F '\t' '{print $2}'
-      )
-      if (( ${#memory_sorted_devices[@]} > 0 )); then
-        printf '%s\n' "${memory_sorted_devices[@]}"
+      while IFS= read -r line; do
+        gpu_idx="${line%%,*}"
+        mem_used="${line#*,}"
+        gpu_idx="${gpu_idx//[[:space:]]/}"
+        mem_used="${mem_used//[[:space:]]/}"
+        if [[ -n "${configured_lookup[${gpu_idx}]:-}" && "${mem_used}" =~ ^[0-9]+$ ]]; then
+          memory_rows+=("${mem_used}"$'\t'"${gpu_idx}")
+        fi
+      done <<<"${query_output}"
+      if (( ${#memory_rows[@]} > 0 )); then
+        printf '%s\n' "${memory_rows[@]}" | sort -n -k1,1 -k2,2n | head -n "${max_devices}" | while IFS=$'\t' read -r _ gpu_idx; do
+          printf '%s\n' "${gpu_idx}"
+        done
         return 0
       fi
     fi
