@@ -55,6 +55,7 @@ eddy_cuda_candidate_devices() {
   local max_devices="${DWI_EDDY_CUDA_MAX_SELECTED_DEVICES:-5}"
   local -a configured_devices=()
   local -a selected_devices=()
+  local -a ranked_devices=()
   local -A configured_lookup=()
   local -a memory_rows=()
   local query_output=""
@@ -83,9 +84,14 @@ eddy_cuda_candidate_devices() {
         fi
       done <<<"${query_output}"
       if (( ${#memory_rows[@]} > 0 )); then
-        printf '%s\n' "${memory_rows[@]}" | sort -n -k1,1 -k2,2n | head -n "${max_devices}" | while IFS=$'\t' read -r _ gpu_idx; do
-          printf '%s\n' "${gpu_idx}"
-        done
+        mapfile -t ranked_devices < <(
+          printf '%s\n' "${memory_rows[@]}" |
+            sort -n -k1,1 -k2,2n |
+            head -n "${max_devices}" |
+            cut -f2
+        )
+        (( ${#ranked_devices[@]} > 0 )) || die "Failed to rank eddy CUDA devices"
+        printf '%s\n' "${ranked_devices[@]}"
         return 0
       fi
     fi
