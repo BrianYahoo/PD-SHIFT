@@ -174,6 +174,45 @@ recon-all -all -noskullstrip -xmask <t1_freesurfer_xmask> -openmp <NTHREADS>
 -T2 <t2_coreg_t1> -T2pial     当 PHASE1_T2_SURFER_ENABLE=1 且 T2 存在
 -expert recon-all.expert.opts 当 PHASE1_FREESURFER_CORTEX_LABEL_ARGS 非空
 -no-v8                        当 PHASE1_FREESURFER_NO_V8=1
+-no-fix-with-ga               当 PHASE1_FREESURFER_FIX_WITH_GA=0 或 topology fallback 关闭 genetic algorithm
+-use-new-fixer                当 topology fallback 切换到 FreeSurfer new topology fixer
+```
+
+FreeSurfer topology runaway 保护：
+
+```text
+PHASE1_FREESURFER_RETRY_MAX=7
+  Step2 对可恢复 FreeSurfer 错误的最大重试次数；实际最多尝试次数为该值加 1。
+
+PHASE1_FREESURFER_FIX_WITH_GA=1
+  是否默认允许 FreeSurfer topology fixer 使用 genetic algorithm。
+
+PHASE1_FREESURFER_TOPO_FIXER_MODE=old
+  默认 topology fixer。`old` 保持 FreeSurfer 默认行为；`new` 只建议作为 fallback。
+
+PHASE1_FREESURFER_TOPO_RUNAWAY_ENABLE=1
+  启用 `recon-all` 异步 watchdog。
+
+PHASE1_FREESURFER_TOPO_MAX_DEFECT_VERTICES=20000
+PHASE1_FREESURFER_TOPO_MAX_DEFECT_HULL=3000
+  watchdog 从当前 attempt log 中解析
+  CORRECTING DEFECT <n> (vertices=<v>, convex hull=<h>)
+  任一指标超过阈值即判定 `mris_fix_topology` 有异常长跑风险。
+
+PHASE1_FREESURFER_TOPO_WATCHDOG_INTERVAL_SEC=60
+  watchdog 轮询日志的间隔。
+
+PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_HIRES=1
+  命中 runaway 后递归终止 `recon-all` 进程树，删除当前 FreeSurfer subject 目录，
+  关闭 `-hires` 后从干净状态重跑，并在 manifest 中记录协变量。
+
+PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_FIX_GA=1
+  如果关闭 `-hires` 后仍再次命中 runaway，则再次删除当前 FreeSurfer subject 目录，
+  追加 `-no-fix-with-ga` 后从干净状态重跑。
+
+PHASE1_FREESURFER_TOPO_FALLBACK_USE_NEW_FIXER=1
+  如果关闭 `-hires` 和 genetic algorithm 后仍再次命中 runaway，则切换到
+  FreeSurfer `-use-new-fixer` 后从干净状态重跑。
 ```
 
 ### FastSurfer 关键参数
@@ -210,6 +249,19 @@ surfer_engine_log
 recon_all_args
 surfer_hires
 surfer_hires_reason
+surfer_fix_with_ga
+topology_runaway_detected
+topology_runaway_attempt
+topology_runaway_hemi
+topology_runaway_defect
+topology_runaway_vertices
+topology_runaway_convex_hull
+topology_runaway_log
+topology_runaway_report
+topology_fallback
+topology_fallback_disable_hires
+topology_fallback_disable_fix_ga
+topology_fallback_covariate
 surfer_use_t2
 fastsurfer_vox_size
 t1_resample_voxel_size_mm

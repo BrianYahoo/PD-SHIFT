@@ -79,6 +79,15 @@
 - `PHASE1_SURFER_HIRES`
 - `PHASE1_FREESURFER_NO_V8`
 - `PHASE1_FREESURFER_CORTEX_LABEL_ARGS`
+- `PHASE1_FREESURFER_RETRY_MAX`
+- `PHASE1_FREESURFER_FIX_WITH_GA`
+- `PHASE1_FREESURFER_TOPO_FIXER_MODE`
+- `PHASE1_FREESURFER_TOPO_RUNAWAY_ENABLE`
+- `PHASE1_FREESURFER_TOPO_MAX_DEFECT_VERTICES`
+- `PHASE1_FREESURFER_TOPO_MAX_DEFECT_HULL`
+- `PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_HIRES`
+- `PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_FIX_GA`
+- `PHASE1_FREESURFER_TOPO_FALLBACK_USE_NEW_FIXER`
 - `PHASE1_FASTSURFER_LABEL_CORTEX_ARGS`
 - `PHASE1_FASTSURFER_VOX_SIZE`
 - `PHASE1_T2_SURFER_ENABLE`
@@ -87,6 +96,7 @@
 
 - FreeSurfer 会在输入体素小于 `1.0 mm` 时自动启用 `-hires`。
 - FreeSurfer 在 T2 可用时追加 `-T2` 和 `-T2pial`。
+- FreeSurfer 若在 `mris_fix_topology` 中出现超大 topology defect，会由 watchdog 中止当前 `recon-all`，清理坏 subject 目录，并按配置依次关闭 `-hires`、关闭 topology genetic algorithm 后重跑，同时把 fallback 状态写入 manifest。
 - FastSurfer 在 T2 可用时追加 `--t2` 和 `--reg_mode none`。
 - FastSurfer 若 segmentation 已存在但表面不完整，会走 `--surf_only --edits` 续跑。
 

@@ -176,6 +176,7 @@ normalize_subject_id() {
 
 load_dataset_config() {
   local requested_dataset="${1:-${PIPELINE_DATASET:-}}"
+  local requested_nthreads="${PIPELINE_NTHREADS:-}"
 
   [[ -f "${CONFIG_DIR}/pipeline.env" ]] || die "Missing config: ${CONFIG_DIR}/pipeline.env"
   # shellcheck disable=SC1090
@@ -188,6 +189,10 @@ load_dataset_config() {
   if [[ -f "${CONFIG_DIR}/datasets/${DATASET_TYPE}.env" ]]; then
     # shellcheck disable=SC1090
     source "${CONFIG_DIR}/datasets/${DATASET_TYPE}.env"
+  fi
+  if [[ -n "${requested_nthreads}" ]]; then
+    [[ "${requested_nthreads}" =~ ^[0-9]+$ && "${requested_nthreads}" -gt 0 ]] || die "Invalid PIPELINE_NTHREADS: ${requested_nthreads}"
+    NTHREADS="${requested_nthreads}"
   fi
 
   # 这里统一把 dataset 级开关补成完整默认值。后续 phase 脚本只读取这些变量，
@@ -239,6 +244,17 @@ load_dataset_config() {
   : "${PHASE1_FREESURFER_NO_V8:=0}"
   : "${PHASE1_FREESURFER_V8_GUARD:=0}"
   : "${PHASE1_FREESURFER_CORTEX_LABEL_ARGS:=}"
+  : "${PHASE1_FREESURFER_RETRY_MAX:=7}"
+  : "${PHASE1_FREESURFER_FIX_WITH_GA:=1}"
+  : "${PHASE1_FREESURFER_TOPO_FIXER_MODE:=old}"
+  : "${PHASE1_FREESURFER_TOPO_RUNAWAY_ENABLE:=1}"
+  : "${PHASE1_FREESURFER_TOPO_MAX_DEFECT_VERTICES:=20000}"
+  : "${PHASE1_FREESURFER_TOPO_MAX_DEFECT_HULL:=3000}"
+  : "${PHASE1_FREESURFER_TOPO_WATCHDOG_INTERVAL_SEC:=60}"
+  : "${PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_HIRES:=1}"
+  : "${PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_FIX_GA:=1}"
+  : "${PHASE1_FREESURFER_TOPO_FALLBACK_USE_NEW_FIXER:=1}"
+  : "${PHASE1_FREESURFER_TOPO_FALLBACK_FASTSURFER:=1}"
   : "${PHASE1_FASTSURFER_LABEL_CORTEX_ARGS:=}"
   : "${PHASE1_FASTSURFER_VOX_SIZE:=min}"
   : "${FASTSURFER_USE_CUDA:=0}"

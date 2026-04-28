@@ -19,6 +19,10 @@ require_cmd mri_surf2volseg
 if [[ "${SURFER_TYPE}" == "free" ]]; then
   require_cmd recon-all
   require_cmd mri_aparc2aseg
+  if [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_FASTSURFER:-1}" == "1" ]]; then
+    require_cmd mris_ca_label
+    [[ -f "${FASTSURFER_HOME}/run_fastsurfer.sh" ]] || die "Missing FastSurfer rescue entrypoint: ${FASTSURFER_HOME}/run_fastsurfer.sh"
+  fi
 else
   require_cmd mris_ca_label
   [[ -f "${FASTSURFER_HOME}/run_fastsurfer.sh" ]] || die "Missing FastSurfer entrypoint: ${FASTSURFER_HOME}/run_fastsurfer.sh"
@@ -38,8 +42,10 @@ SURFER_SUBJECTS_DIR="${PHASE1_ANAT_STEP2_DIR}/surfer_subjects"
 SURFER_SUBJECT_DIR="${SURFER_SUBJECTS_DIR}/${SUBJECT_ID}"
 APARC_ASEG="${PHASE1_ANAT_STEP2_DIR}/aparc+aseg.nii.gz"
 SURFER_DONE="${PHASE1_ANAT_STEP2_DIR}/surfer.done"
+FREESURFER_FAILED_ARCHIVE_DIR="${PHASE1_ANAT_STEP2_DIR}/freesurfer"
+FASTSURFER_RESCUE_LOG="${PHASE1_ANAT_STEP2_DIR}/fastsurfer_rescue.log"
 if [[ "${SURFER_TYPE}" == "free" ]]; then
-  SURFER_ENGINE_LOG="${PHASE1_ANAT_STEP2_DIR}/recon-all.log"
+  SURFER_ENGINE_LOG="${FREESURFER_FAILED_ARCHIVE_DIR}/recon-all.log"
 else
   SURFER_ENGINE_LOG="${PHASE1_ANAT_STEP2_DIR}/fastsurfer.log"
 fi
@@ -74,6 +80,8 @@ fi
 SURFER_USE_T2_EFFECTIVE="${SURFER_USE_T2}"
 SURFER_HIRES_EFFECTIVE="0"
 SURFER_HIRES_REASON="disabled"
+SURFER_FIX_WITH_GA_EFFECTIVE="${PHASE1_FREESURFER_FIX_WITH_GA:-1}"
+SURFER_TOPO_FIXER_EFFECTIVE="${PHASE1_FREESURFER_TOPO_FIXER_MODE:-old}"
 SURFER_T1_INPUT_EFFECTIVE="${T1_NATIVE_INPUT}"
 SURFER_T1_BRAIN_EFFECTIVE="${T1_BRAIN}"
 SURFER_T1_MASK_EFFECTIVE="${T1_MASK}"
@@ -85,7 +93,23 @@ SURFER_HIRES_INPUT_CROP_APPLIED="0"
 SURFER_HIRES_INPUT_CROP_BOUNDS=""
 SURFER_ENGINE_LOG_CURRENT=""
 SURFER_RETRY_ATTEMPT="1"
-SURFER_RETRY_MAX="3"
+SURFER_RETRY_MAX="${PHASE1_FREESURFER_RETRY_MAX:-7}"
+SURFER_TOPO_RUNAWAY_REPORT="${FREESURFER_FAILED_ARCHIVE_DIR}/topology_runaway.json"
+SURFER_TOPO_RUNAWAY_DETECTED="0"
+SURFER_TOPO_RUNAWAY_ATTEMPT=""
+SURFER_TOPO_RUNAWAY_HEMI=""
+SURFER_TOPO_RUNAWAY_DEFECT=""
+SURFER_TOPO_RUNAWAY_VERTICES="0"
+SURFER_TOPO_RUNAWAY_CONVEX_HULL="0"
+SURFER_TOPO_RUNAWAY_LOG=""
+SURFER_TOPO_FALLBACK=""
+SURFER_TOPO_FALLBACK_DISABLE_HIRES="0"
+SURFER_TOPO_FALLBACK_DISABLE_FIX_GA="0"
+SURFER_TOPO_FALLBACK_USE_NEW_FIXER="0"
+SURFER_TOPO_FALLBACK_FASTSURFER="0"
+SURFER_TOPO_FALLBACK_COVARIATE="0"
+SURFER_ENGINE_EFFECTIVE="${SURFER_TYPE}"
+SURFER_FORCE_FASTSURFER_RESCUE="0"
 if [[ "${SURFER_TYPE}" == "free" ]]; then
   if "${PYTHON_BIN}" - "${T1_NATIVE_INPUT}" <<'PY' >/dev/null 2>&1
 import sys
@@ -172,6 +196,20 @@ fastsurfer_recoverable_segstats_failure() {
   fastsurfer_surfaces_ready || return 1
   surfer_core_volumes_ready || return 1
   fastsurfer_mapped_aparc_ready || return 1
+}
+
+fastsurfer_recoverable_timeinfo_failure() {
+  [[ -f "${SURFER_ENGINE_LOG}" ]] || return 1
+  grep -q "recon-surf.sh ${SUBJECT_ID} finished without error" "${SURFER_ENGINE_LOG}" || return 1
+  grep -q "extract_recon_surf_time_info.py" "${SURFER_ENGINE_LOG}" || return 1
+  grep -Eq "ParserError: Unknown string format|does not match format" "${SURFER_ENGINE_LOG}" || return 1
+  fastsurfer_surfaces_ready || return 1
+  surfer_core_volumes_ready || return 1
+  fastsurfer_mapped_aparc_ready || return 1
+}
+
+fastsurfer_recoverable_completion_failure() {
+  fastsurfer_recoverable_segstats_failure || fastsurfer_recoverable_timeinfo_failure
 }
 
 fastsurfer_engine_outputs_ready() {
@@ -293,7 +331,8 @@ PY
 }
 
 fastsurfer_desikan_repair_enabled() {
-  [[ "${SURFER_TYPE}" == "fast" && "${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}" == "1" ]]
+  [[ "${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}" == "1" ]] || return 1
+  [[ "${SURFER_TYPE}" == "fast" || "${SURFER_TOPO_FALLBACK_FASTSURFER:-0}" == "1" ]]
 }
 
 fastsurfer_desikan_labels_ready_in_volume() {
@@ -404,12 +443,18 @@ step2_requires_config_refresh() {
   local manifest_fastsurfer_vox_size=""
   local manifest_t1_resample_voxel_size=""
   local manifest_surfer_use_t2=""
+  local manifest_engine_effective=""
   local current_t1_resample_voxel_size="${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}"
 
   if [[ ! -f "${STEP2_MANIFEST}" ]]; then
     if [[ -d "${SURFER_SUBJECT_DIR}" ]] && { [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] || [[ "${INIT_T1_RESAMPLE_ENABLE:-0}" == "1" ]] || [[ "${SURFER_USE_T2:-0}" == "1" ]] || { [[ "${SURFER_TYPE}" == "fast" && "${PHASE1_FASTSURFER_VOX_SIZE:-min}" != "min" ]]; }; }; then
       return 0
     fi
+    return 1
+  fi
+
+  manifest_engine_effective="$(step_manifest_value "${STEP2_MANIFEST}" "surfer_engine_effective")"
+  if [[ "${SURFER_TYPE}" == "free" && "${manifest_engine_effective}" == "fastsurfer_rescue" ]]; then
     return 1
   fi
 
@@ -459,13 +504,143 @@ reset_surfer_subject() {
   fi
 }
 
+archive_freesurfer_step2_logs() {
+  local file=""
+  [[ "${SURFER_TYPE}" == "free" ]] || return 0
+  mkdir -p "${FREESURFER_FAILED_ARCHIVE_DIR}"
+  for file in "${PHASE1_ANAT_STEP2_DIR}"/recon-all*.log "${PHASE1_ANAT_STEP2_DIR}/topology_runaway.json"; do
+    [[ -e "${file}" ]] || continue
+    mv -f "${file}" "${FREESURFER_FAILED_ARCHIVE_DIR}/"
+  done
+}
+
 write_surfer_done() {
   cat > "${SURFER_DONE}" <<EOF
 surfer_type	${SURFER_TYPE}
 surfer_label	${SURFER_LABEL}
+surfer_engine_effective	${SURFER_ENGINE_EFFECTIVE}
 subject_id	${SUBJECT_ID}
 subject_dir	${SURFER_SUBJECT_DIR}
 EOF
+}
+
+collect_process_tree() {
+  local root_pid="$1"
+  local child_pid=""
+  printf '%s\n' "${root_pid}"
+  while read -r child_pid; do
+    [[ -n "${child_pid}" ]] || continue
+    collect_process_tree "${child_pid}"
+  done < <(ps -o pid= --ppid "${root_pid}" 2>/dev/null || true)
+}
+
+kill_process_tree() {
+  local root_pid="$1"
+  local pid=""
+  local -a pids=()
+  mapfile -t pids < <(collect_process_tree "${root_pid}" | awk 'NF' | sort -rn | uniq)
+  for pid in "${pids[@]}"; do
+    kill -TERM "${pid}" 2>/dev/null || true
+  done
+  sleep 5
+  for pid in "${pids[@]}"; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      kill -KILL "${pid}" 2>/dev/null || true
+    fi
+  done
+}
+
+topology_runaway_detected_in_log() {
+  local log_path="$1"
+  local threshold_vertices="${PHASE1_FREESURFER_TOPO_MAX_DEFECT_VERTICES:-20000}"
+  local threshold_hull="${PHASE1_FREESURFER_TOPO_MAX_DEFECT_HULL:-3000}"
+  local line=""
+  local defect=""
+  local vertices=""
+  local hull=""
+  local best_defect=""
+  local best_vertices=0
+  local best_hull=0
+  local hemi=""
+
+  [[ "${PHASE1_FREESURFER_TOPO_RUNAWAY_ENABLE:-1}" == "1" ]] || return 1
+  [[ -f "${log_path}" ]] || return 1
+  [[ "${threshold_vertices}" =~ ^[0-9]+$ ]] || threshold_vertices=20000
+  [[ "${threshold_hull}" =~ ^[0-9]+$ ]] || threshold_hull=3000
+
+  while IFS=$'\t' read -r defect vertices hull; do
+    [[ "${vertices}" =~ ^[0-9]+$ && "${hull}" =~ ^[0-9]+$ ]] || continue
+    if (( vertices >= threshold_vertices || hull >= threshold_hull )); then
+      if (( vertices > best_vertices || (vertices == best_vertices && hull > best_hull) )); then
+        best_defect="${defect}"
+        best_vertices="${vertices}"
+        best_hull="${hull}"
+      fi
+    fi
+  done < <(sed -nE 's/.*CORRECTING DEFECT ([0-9]+) \(vertices=([0-9]+), convex hull=([0-9]+).*/\1\t\2\t\3/p' "${log_path}")
+
+  [[ -n "${best_defect}" ]] || return 1
+  hemi="$(awk '/#@# Fix Topology/ {hemi=$4} END {print hemi}' "${log_path}" 2>/dev/null || true)"
+  SURFER_TOPO_RUNAWAY_DETECTED="1"
+  SURFER_TOPO_RUNAWAY_ATTEMPT="${SURFER_RETRY_ATTEMPT}"
+  SURFER_TOPO_RUNAWAY_HEMI="${hemi:-unknown}"
+  SURFER_TOPO_RUNAWAY_DEFECT="${best_defect}"
+  SURFER_TOPO_RUNAWAY_VERTICES="${best_vertices}"
+  SURFER_TOPO_RUNAWAY_CONVEX_HULL="${best_hull}"
+  SURFER_TOPO_RUNAWAY_LOG="${log_path}"
+  return 0
+}
+
+write_topology_runaway_report() {
+  mkdir -p "${FREESURFER_FAILED_ARCHIVE_DIR}"
+  cat > "${SURFER_TOPO_RUNAWAY_REPORT}" <<EOF
+{
+  "subject_id": "${SUBJECT_ID}",
+  "surfer_type": "${SURFER_TYPE}",
+  "attempt": "${SURFER_TOPO_RUNAWAY_ATTEMPT}",
+  "hemi": "${SURFER_TOPO_RUNAWAY_HEMI}",
+  "defect": "${SURFER_TOPO_RUNAWAY_DEFECT}",
+  "vertices": ${SURFER_TOPO_RUNAWAY_VERTICES:-0},
+  "convex_hull": ${SURFER_TOPO_RUNAWAY_CONVEX_HULL:-0},
+  "log": "${SURFER_TOPO_RUNAWAY_LOG}",
+  "fallback": "${SURFER_TOPO_FALLBACK}",
+  "fallback_disable_hires": "${SURFER_TOPO_FALLBACK_DISABLE_HIRES}",
+  "fallback_disable_fix_ga": "${SURFER_TOPO_FALLBACK_DISABLE_FIX_GA}",
+  "fallback_use_new_fixer": "${SURFER_TOPO_FALLBACK_USE_NEW_FIXER}",
+  "fallback_fastsurfer": "${SURFER_TOPO_FALLBACK_FASTSURFER}",
+  "fallback_covariate": "${SURFER_TOPO_FALLBACK_COVARIATE}"
+}
+EOF
+}
+
+topology_fastsurfer_rescue_exhausted() {
+  local report
+  [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_FASTSURFER:-1}" == "1" ]] || return 1
+  for report in "${SURFER_TOPO_RUNAWAY_REPORT}" "${FREESURFER_FAILED_ARCHIVE_DIR}/topology_runaway.json"; do
+    [[ -f "${report}" ]] || continue
+    grep -q '"fallback_covariate": "1"' "${report}" || continue
+    if grep -q '"fallback_fastsurfer": "1"' "${report}" || grep -q '"fallback_use_new_fixer": "1"' "${report}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+archive_failed_freesurfer_subject() {
+  archive_freesurfer_step2_logs
+  if [[ -f "${FASTSURFER_DEEPSEG_MGZ}" ]]; then
+    log "[phase1_anat] Step2 continuing existing FastSurfer rescue outputs for ${SUBJECT_ID}"
+    rm -f "${APARC_ASEG}" "${SURFER_DONE}" "${STEP2_MANIFEST}" "${FS_DONE}" "${FS_ERROR}"
+    return 0
+  fi
+  mkdir -p "${FREESURFER_FAILED_ARCHIVE_DIR}/surfer_subjects"
+  rm -rf "${FREESURFER_FAILED_ARCHIVE_DIR}/surfer_subjects/${SUBJECT_ID}"
+  if [[ -d "${SURFER_SUBJECT_DIR}" ]]; then
+    mv -f "${SURFER_SUBJECT_DIR}" "${FREESURFER_FAILED_ARCHIVE_DIR}/surfer_subjects/${SUBJECT_ID}"
+  fi
+  mkdir -p "${SURFER_SUBJECTS_DIR}" "${FREESURFER_FAILED_ARCHIVE_DIR}"
+  archive_freesurfer_step2_logs
+  rm -f "${APARC_ASEG}" "${SURFER_DONE}" "${STEP2_MANIFEST}" "${FS_DONE}" "${FS_ERROR}"
 }
 
 run_freesurfer() {
@@ -473,9 +648,15 @@ run_freesurfer() {
   local recon_args=()
   local t2_coreg="${SURFER_T2_INPUT_EFFECTIVE}"
   local t1_input="${SURFER_T1_INPUT_EFFECTIVE}"
-  local attempt_log="${PHASE1_ANAT_STEP2_DIR}/recon-all.attempt${SURFER_RETRY_ATTEMPT}.log"
+  local attempt_log="${FREESURFER_FAILED_ARCHIVE_DIR}/recon-all.attempt${SURFER_RETRY_ATTEMPT}.log"
+  local watchdog_interval="${PHASE1_FREESURFER_TOPO_WATCHDOG_INTERVAL_SEC:-60}"
   local recon_status=0
+  local recon_pid=""
+  local recon_stat=""
+  local runaway_detected=0
+  mkdir -p "${FREESURFER_FAILED_ARCHIVE_DIR}"
   [[ -f "${fs_xmask}" ]] || fs_xmask="${SURFER_T1_MASK_EFFECTIVE}"
+  [[ "${watchdog_interval}" =~ ^[0-9]+$ ]] && (( watchdog_interval > 0 )) || watchdog_interval=60
   SURFER_ENGINE_LOG_CURRENT="${attempt_log}"
   : > "${attempt_log}"
   if [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]]; then
@@ -494,21 +675,53 @@ run_freesurfer() {
     # FreeSurfer 8 v8 defaults inject synthstrip/synthseg/synthmorph steps.
     recon_args+=(-no-v8)
   fi
-  {
-    printf '===== %s FreeSurfer attempt %s/%s for %s (use_t2=%s, hires=%s) =====\n' \
-      "$(date '+%Y-%m-%d %H:%M:%S')" \
-      "${SURFER_RETRY_ATTEMPT}" \
-      "$(( SURFER_RETRY_MAX + 1 ))" \
-      "${SUBJECT_ID}" \
-      "${SURFER_USE_T2_EFFECTIVE}" \
-      "${SURFER_HIRES_EFFECTIVE:-0}"
-    if [[ -f "${SURFER_SUBJECT_DIR}/mri/orig/001.mgz" ]]; then
-      recon-all -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
-    else
-      recon-all -i "${t1_input}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
+  if [[ "${SURFER_FIX_WITH_GA_EFFECTIVE:-1}" != "1" ]]; then
+    recon_args+=(-no-fix-with-ga)
+    log "[phase1_anat] Step2 disabling FreeSurfer topology genetic algorithm fallback"
+  fi
+  if [[ "${SURFER_TOPO_FIXER_EFFECTIVE:-old}" == "new" ]]; then
+    recon_args+=(-use-new-fixer)
+    log "[phase1_anat] Step2 using FreeSurfer new topology fixer fallback"
+  fi
+  (
+    {
+      printf '===== %s FreeSurfer attempt %s/%s for %s (use_t2=%s, hires=%s, fix_with_ga=%s, topo_fixer=%s) =====\n' \
+        "$(date '+%Y-%m-%d %H:%M:%S')" \
+        "${SURFER_RETRY_ATTEMPT}" \
+        "$(( SURFER_RETRY_MAX + 1 ))" \
+        "${SUBJECT_ID}" \
+        "${SURFER_USE_T2_EFFECTIVE}" \
+        "${SURFER_HIRES_EFFECTIVE:-0}" \
+        "${SURFER_FIX_WITH_GA_EFFECTIVE:-1}" \
+        "${SURFER_TOPO_FIXER_EFFECTIVE:-old}"
+      if [[ -f "${SURFER_SUBJECT_DIR}/mri/orig/001.mgz" ]]; then
+        recon-all -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
+      else
+        recon-all -i "${t1_input}" -s "${SUBJECT_ID}" -all -noskullstrip -xmask "${fs_xmask}" -openmp "${NTHREADS}" "${recon_args[@]}"
+      fi
+    } >>"${attempt_log}" 2>&1
+  ) &
+  recon_pid=$!
+
+  while kill -0 "${recon_pid}" 2>/dev/null; do
+    recon_stat="$(ps -o stat= -p "${recon_pid}" 2>/dev/null | awk '{print $1}' || true)"
+    [[ "${recon_stat}" == Z* ]] && break
+    if topology_runaway_detected_in_log "${attempt_log}"; then
+      log "[phase1_anat] Step2 watchdog detected FreeSurfer topology runaway for ${SUBJECT_ID}: hemi=${SURFER_TOPO_RUNAWAY_HEMI} defect=${SURFER_TOPO_RUNAWAY_DEFECT} vertices=${SURFER_TOPO_RUNAWAY_VERTICES} convex_hull=${SURFER_TOPO_RUNAWAY_CONVEX_HULL}; killing recon-all pid=${recon_pid}"
+      runaway_detected=1
+      kill_process_tree "${recon_pid}"
+      break
     fi
-  } >>"${attempt_log}" 2>&1
-  recon_status=$?
+    sleep "${watchdog_interval}"
+  done
+
+  if (( runaway_detected == 1 )); then
+    wait "${recon_pid}" >/dev/null 2>&1 || true
+    recon_status=124
+  else
+    wait "${recon_pid}"
+    recon_status=$?
+  fi
   cat "${attempt_log}" >>"${SURFER_ENGINE_LOG}"
   return "${recon_status}"
 }
@@ -529,6 +742,56 @@ run_freesurfer_with_retries() {
     (( recon_status == 0 )) && return 0
 
     current_log="${SURFER_ENGINE_LOG_CURRENT}"
+    if (( recon_status == 124 )) && [[ "${SURFER_TOPO_RUNAWAY_DETECTED}" == "1" ]]; then
+      retry_count=$(( retry_count + 1 ))
+      if (( retry_count > SURFER_RETRY_MAX )); then
+        break
+      fi
+      if [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_HIRES:-1}" == "1" && "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]]; then
+        SURFER_TOPO_FALLBACK="disable_hires"
+        SURFER_TOPO_FALLBACK_DISABLE_HIRES="1"
+        SURFER_TOPO_FALLBACK_COVARIATE="1"
+        write_topology_runaway_report
+        log "[phase1_anat] Step2 retry ${retry_count}/${SURFER_RETRY_MAX} after FreeSurfer topology runaway for ${SUBJECT_ID}; disabling -hires"
+        SURFER_HIRES_EFFECTIVE="0"
+        SURFER_HIRES_REASON="topology_runaway_fallback_disable_hires"
+        reset_surfer_subject "topology runaway detected" 1
+        continue
+      fi
+      if [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_DISABLE_FIX_GA:-1}" == "1" && "${SURFER_FIX_WITH_GA_EFFECTIVE:-1}" == "1" ]]; then
+        SURFER_TOPO_FALLBACK="disable_fix_ga"
+        SURFER_TOPO_FALLBACK_DISABLE_FIX_GA="1"
+        SURFER_TOPO_FALLBACK_COVARIATE="1"
+        write_topology_runaway_report
+        log "[phase1_anat] Step2 retry ${retry_count}/${SURFER_RETRY_MAX} after FreeSurfer topology runaway for ${SUBJECT_ID}; disabling topology genetic algorithm"
+        SURFER_FIX_WITH_GA_EFFECTIVE="0"
+        reset_surfer_subject "topology runaway detected after hires fallback" 1
+        continue
+      fi
+      if [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_USE_NEW_FIXER:-1}" == "1" && "${SURFER_TOPO_FIXER_EFFECTIVE:-old}" != "new" ]]; then
+        SURFER_TOPO_FALLBACK="use_new_fixer"
+        SURFER_TOPO_FALLBACK_USE_NEW_FIXER="1"
+        SURFER_TOPO_FALLBACK_COVARIATE="1"
+        write_topology_runaway_report
+        log "[phase1_anat] Step2 retry ${retry_count}/${SURFER_RETRY_MAX} after FreeSurfer topology runaway for ${SUBJECT_ID}; switching to new topology fixer"
+        SURFER_TOPO_FIXER_EFFECTIVE="new"
+        reset_surfer_subject "topology runaway detected after genetic algorithm fallback" 1
+        continue
+      fi
+      if [[ "${PHASE1_FREESURFER_TOPO_FALLBACK_FASTSURFER:-1}" == "1" ]]; then
+        run_fastsurfer_rescue
+        return $?
+      fi
+      SURFER_TOPO_FALLBACK="none"
+      SURFER_TOPO_FALLBACK_DISABLE_HIRES="0"
+      SURFER_TOPO_FALLBACK_DISABLE_FIX_GA="0"
+      SURFER_TOPO_FALLBACK_USE_NEW_FIXER="0"
+      SURFER_TOPO_FALLBACK_FASTSURFER="0"
+      SURFER_TOPO_FALLBACK_COVARIATE="0"
+      write_topology_runaway_report
+      break
+    fi
+
     if [[ -f "${SURFER_ORIG}" ]] && [[ -f "${current_log}" ]] && grep -q "could not open mask volume brainmask.mgz" "${current_log}"; then
       retry_count=$(( retry_count + 1 ))
       if (( retry_count > SURFER_RETRY_MAX )); then
@@ -612,13 +875,56 @@ run_fastsurfer() {
   fi
 }
 
+run_fastsurfer_rescue() {
+  local rescue_status=0
+  local requested_engine_log="${SURFER_ENGINE_LOG}"
+
+  SURFER_ENGINE_EFFECTIVE="fastsurfer_rescue"
+  SURFER_TOPO_FALLBACK="fastsurfer_rescue"
+  SURFER_TOPO_FALLBACK_FASTSURFER="1"
+  SURFER_TOPO_FALLBACK_COVARIATE="1"
+  write_topology_runaway_report
+
+  log "[phase1_anat] Step2 fallback to FastSurfer for ${SUBJECT_ID} after FreeSurfer topology runaway"
+  archive_failed_freesurfer_subject
+
+  export PATH="$(dirname "${FASTSURFER_PYTHON}"):${FASTSURFER_HOME}:${PATH}"
+  export PYTHONPATH="${FASTSURFER_HOME}${PYTHONPATH:+:${PYTHONPATH}}"
+  SURFER_ENGINE_LOG="${FASTSURFER_RESCUE_LOG}"
+  if fastsurfer_engine_outputs_ready; then
+    log "[phase1_anat] Step2 reusing completed FastSurfer rescue outputs for ${SUBJECT_ID}"
+  else
+    set +e
+    run_fastsurfer
+    rescue_status=$?
+    set -e
+    if (( rescue_status != 0 )) && fastsurfer_recoverable_completion_failure; then
+      log "[phase1_anat] Step2 detected recoverable FastSurfer rescue completion failure for ${SUBJECT_ID}, reusing completed surfaces and mapped aparc+aseg"
+      ensure_fastsurfer_surface_inputs
+      ensure_fastsurfer_aparc_aseg
+      rescue_status=0
+    fi
+  fi
+  SURFER_ENGINE_LOG="${requested_engine_log}"
+  (( rescue_status == 0 )) || return "${rescue_status}"
+
+  ensure_fastsurfer_surface_inputs
+  ensure_fastsurfer_aparc_aseg
+  repair_fastsurfer_desikan_aparc
+}
+
 # 输出当前 step 的开始日志。
 log "[phase1_anat] Step2 ${SURFER_LABEL} recon for ${SUBJECT_ID}"
 
 # 在进入 recon-all 前先写出 dataset 专属 expert 选项。
 write_dataset_specific_expert_opts
 
-if step2_requires_config_refresh; then
+if [[ "${SURFER_TYPE}" == "free" ]] && topology_fastsurfer_rescue_exhausted && ! step2_native_outputs_ready; then
+  log "[phase1_anat] Step2 previous FreeSurfer topology fallback exhausted for ${SUBJECT_ID}; fallback to FastSurfer"
+  SURFER_FORCE_FASTSURFER_RESCUE="1"
+fi
+
+if [[ "${SURFER_FORCE_FASTSURFER_RESCUE}" != "1" ]] && step2_requires_config_refresh; then
   reset_surfer_subject "config changed"
 fi
 
@@ -652,11 +958,12 @@ if [[ "${SURFER_TYPE}" == "free" && -f "${SURFER_SUBJECT_DIR}/scripts/IsRunning.
 fi
 
 # 如果上次 FreeSurfer 已经失败，或者留下了假的 done 但关键中间结果并不完整，则清空坏掉的 subject 后重新开始。
-if [[ "${SURFER_TYPE}" == "free" ]] && { [[ -f "${FS_ERROR}" ]] || [[ -f "${FS_DONE}" ]] || [[ -f "${SURFER_DONE}" ]] || freesurfer_uses_v8_defaults; } && { ! surfer_surfaces_ready || ! surfer_core_volumes_ready || freesurfer_uses_v8_defaults; }; then
+if [[ "${SURFER_TYPE}" == "free" && "${SURFER_FORCE_FASTSURFER_RESCUE}" != "1" ]] && { [[ -f "${FS_ERROR}" ]] || [[ -f "${FS_DONE}" ]] || [[ -f "${SURFER_DONE}" ]] || freesurfer_uses_v8_defaults; } && { ! surfer_surfaces_ready || ! surfer_core_volumes_ready || freesurfer_uses_v8_defaults; }; then
   log "[phase1_anat] Step2 resetting incomplete ${SURFER_LABEL} subject for ${SUBJECT_ID}"
   rm -rf "${SURFER_SUBJECT_DIR}"
   rm -f "${APARC_ASEG}" \
     "${SURFER_DONE}" \
+    "${STEP2_MANIFEST}" \
     "${SURFER_ENGINE_LOG}" \
     "${PHASE1_ANAT_STEP2_DIR}/mri_aparc2aseg.log" \
     "${PHASE1_ANAT_STEP2_DIR}/mri_convert.log" \
@@ -689,11 +996,16 @@ fi
 
 # 用选定的 surfer 引擎执行表面重建。
 if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
+  if [[ "${SURFER_TYPE}" == "free" && "${SURFER_FORCE_FASTSURFER_RESCUE}" != "1" ]]; then
+    rm -f "${SURFER_TOPO_RUNAWAY_REPORT}"
+  fi
   if [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_engine_outputs_ready; then
     :
   else
     set +e
-    if [[ "${SURFER_TYPE}" == "free" ]]; then
+    if [[ "${SURFER_TYPE}" == "free" && "${SURFER_FORCE_FASTSURFER_RESCUE}" == "1" ]]; then
+      run_fastsurfer_rescue
+    elif [[ "${SURFER_TYPE}" == "free" ]]; then
       run_freesurfer_with_retries
     else
       run_fastsurfer
@@ -701,8 +1013,8 @@ if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
     recon_status=$?
     set -e
 
-    if (( recon_status != 0 )) && [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_recoverable_segstats_failure; then
-      log "[phase1_anat] Step2 detected recoverable FastSurfer segstats failure for ${SUBJECT_ID}, reusing completed surfaces and mapped aparc+aseg"
+    if (( recon_status != 0 )) && [[ "${SURFER_TYPE}" == "fast" ]] && fastsurfer_recoverable_completion_failure; then
+      log "[phase1_anat] Step2 detected recoverable FastSurfer completion failure for ${SUBJECT_ID}, reusing completed surfaces and mapped aparc+aseg"
       ensure_fastsurfer_surface_inputs
       ensure_fastsurfer_aparc_aseg
       recon_status=0
@@ -713,19 +1025,19 @@ if [[ ! -f "${SURFER_DONE}" ]] || ! surfer_surfaces_ready; then
 fi
 
 # 在导出 aparc+aseg 前再次确认关键表面已经生成。
-if [[ "${SURFER_TYPE}" == "fast" ]]; then
+if [[ "${SURFER_TYPE}" == "fast" || "${SURFER_TOPO_FALLBACK_FASTSURFER}" == "1" ]]; then
   fastsurfer_surfaces_ready || die "${SURFER_LABEL} surfaces missing after recon: ${SURFER_SUBJECT_DIR}/surf"
 else
   surfer_surfaces_ready || die "${SURFER_LABEL} surfaces missing after recon: ${SURFER_SUBJECT_DIR}/surf"
 fi
 surfer_core_volumes_ready || die "${SURFER_LABEL} core volumes missing after recon: ${SURFER_SUBJECT_DIR}/mri"
-if [[ "${SURFER_TYPE}" == "fast" ]]; then
+if [[ "${SURFER_TYPE}" == "fast" || "${SURFER_TOPO_FALLBACK_FASTSURFER}" == "1" ]]; then
   ensure_fastsurfer_aparc_aseg
   repair_fastsurfer_desikan_aparc
 fi
 
 # 导出体素版 aparc+aseg，并强制回到原始 T1 native space。
-if [[ ! -f "${SURFER_APARC_ASEG_MGZ}" && "${SURFER_TYPE}" == "free" ]]; then
+if [[ ! -f "${SURFER_APARC_ASEG_MGZ}" && "${SURFER_TYPE}" == "free" && "${SURFER_TOPO_FALLBACK_FASTSURFER}" != "1" ]]; then
   mri_aparc2aseg --s "${SUBJECT_ID}" --annot aparc --o "${SURFER_APARC_ASEG_MGZ}" >"${PHASE1_ANAT_STEP2_DIR}/mri_aparc2aseg.log" 2>&1
 fi
 
@@ -745,6 +1057,7 @@ if fastsurfer_desikan_repair_enabled; then
 fi
 
 write_surfer_done
+archive_freesurfer_step2_logs
 
 # 写出当前 step 的输出清单。
 cat > "${STEP2_MANIFEST}" <<EOF
@@ -752,6 +1065,8 @@ key	value
 subject_id	${SUBJECT_ID}
 surfer_type	${SURFER_TYPE}
 surfer_label	${SURFER_LABEL}
+surfer_engine_requested	${SURFER_TYPE}
+surfer_engine_effective	${SURFER_ENGINE_EFFECTIVE}
 bids_t1_input	${BIDS_T1_INPUT}
 t1_native_input	${T1_NATIVE_INPUT}
 t1_brain	${T1_BRAIN}
@@ -761,9 +1076,13 @@ t1_freesurfer_brain	${T1_FS_BRAIN}
 surfer_subjects_dir	${SURFER_SUBJECTS_DIR}
 surfer_subject_dir	${SURFER_SUBJECT_DIR}
 surfer_engine_log	${SURFER_ENGINE_LOG}
-recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${SURFER_T1_INPUT_EFFECTIVE} -all -noskullstrip -xmask ${SURFER_T1_FS_XMASK_EFFECTIVE} -openmp ${NTHREADS}$( [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] && printf ' -hires' )$( [[ "${SURFER_USE_T2_EFFECTIVE}" == "1" ]] && printf ' -T2 %s -T2pial' "${SURFER_T2_INPUT_EFFECTIVE}" )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' --t2 %s --reg_mode none' "${SURFER_T2_INPUT}" )" )
+fastsurfer_rescue_log	${FASTSURFER_RESCUE_LOG}
+failed_freesurfer_archive_dir	${FREESURFER_FAILED_ARCHIVE_DIR}
+recon_all_args	$( [[ "${SURFER_TYPE}" == "free" ]] && echo "-i ${SURFER_T1_INPUT_EFFECTIVE} -all -noskullstrip -xmask ${SURFER_T1_FS_XMASK_EFFECTIVE} -openmp ${NTHREADS}$( [[ "${SURFER_HIRES_EFFECTIVE:-0}" == "1" ]] && printf ' -hires' )$( [[ "${SURFER_USE_T2_EFFECTIVE}" == "1" ]] && printf ' -T2 %s -T2pial' "${SURFER_T2_INPUT_EFFECTIVE}" )$( [[ "${PHASE1_FREESURFER_NO_V8:-0}" == "1" ]] && printf ' -no-v8' )$( [[ "${SURFER_FIX_WITH_GA_EFFECTIVE:-1}" != "1" ]] && printf ' -no-fix-with-ga' )$( [[ "${SURFER_TOPO_FIXER_EFFECTIVE:-old}" == "new" ]] && printf ' -use-new-fixer' )" || echo "run_fastsurfer.sh --sid ${SUBJECT_ID} --sd ${SURFER_SUBJECTS_DIR} --t1 ${BIDS_T1_INPUT} --threads ${NTHREADS} --device ${FASTSURFER_DEVICE:-cpu} --viewagg_device ${FASTSURFER_VIEWAGG_DEVICE:-cpu} --vox_size ${PHASE1_FASTSURFER_VOX_SIZE:-min} --ignore_fs_version$( [[ "${SURFER_USE_T2}" == "1" ]] && printf ' --t2 %s --reg_mode none' "${SURFER_T2_INPUT}" )" )
 surfer_hires	${SURFER_HIRES_EFFECTIVE:-0}
 surfer_hires_reason	${SURFER_HIRES_REASON}
+surfer_fix_with_ga	${SURFER_FIX_WITH_GA_EFFECTIVE:-1}
+surfer_topology_fixer	${SURFER_TOPO_FIXER_EFFECTIVE:-old}
 surfer_use_t2	${SURFER_USE_T2}
 surfer_use_t2_effective	${SURFER_USE_T2_EFFECTIVE}
 surfer_t2_input	${SURFER_T2_INPUT}
@@ -772,6 +1091,20 @@ surfer_t2_input_effective	${SURFER_T2_INPUT_EFFECTIVE}
 surfer_xmask_effective	${SURFER_T1_FS_XMASK_EFFECTIVE}
 surfer_hires_input_crop_applied	${SURFER_HIRES_INPUT_CROP_APPLIED}
 surfer_hires_input_crop_bounds	${SURFER_HIRES_INPUT_CROP_BOUNDS}
+topology_runaway_detected	${SURFER_TOPO_RUNAWAY_DETECTED}
+topology_runaway_attempt	${SURFER_TOPO_RUNAWAY_ATTEMPT}
+topology_runaway_hemi	${SURFER_TOPO_RUNAWAY_HEMI}
+topology_runaway_defect	${SURFER_TOPO_RUNAWAY_DEFECT}
+topology_runaway_vertices	${SURFER_TOPO_RUNAWAY_VERTICES}
+topology_runaway_convex_hull	${SURFER_TOPO_RUNAWAY_CONVEX_HULL}
+topology_runaway_log	${SURFER_TOPO_RUNAWAY_LOG}
+topology_runaway_report	${SURFER_TOPO_RUNAWAY_REPORT}
+topology_fallback	${SURFER_TOPO_FALLBACK}
+topology_fallback_disable_hires	${SURFER_TOPO_FALLBACK_DISABLE_HIRES}
+topology_fallback_disable_fix_ga	${SURFER_TOPO_FALLBACK_DISABLE_FIX_GA}
+topology_fallback_use_new_fixer	${SURFER_TOPO_FALLBACK_USE_NEW_FIXER}
+topology_fallback_fastsurfer	${SURFER_TOPO_FALLBACK_FASTSURFER}
+topology_fallback_covariate	${SURFER_TOPO_FALLBACK_COVARIATE}
 fastsurfer_vox_size	${PHASE1_FASTSURFER_VOX_SIZE:-min}
 fastsurfer_desikan_repair_enabled	${PHASE1_FASTSURFER_DESIKAN_REPAIR_ENABLE:-1}
 t1_resample_voxel_size_mm	${INIT_T1_RESAMPLE_VOXEL_SIZE:-1}
